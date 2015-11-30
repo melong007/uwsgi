@@ -134,6 +134,11 @@ void *simple_loop_run(void *arg1) {
 
 	// ok we are ready, let's start managing requests and signals
 	while (uwsgi.workers[uwsgi.mywid].manage_next_request) {
+        time_t deadline = uwsgi.workers[uwsgi.mywid].grace_reload_deadline;
+        if (deadline > 0 && deadline <= uwsgi_now()) {
+            uwsgi_log("worker reach reload dead line, exit now!!\n");
+            break;
+        }
 
 		wsgi_req_setup(wsgi_req, core_id, NULL);
 

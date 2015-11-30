@@ -449,6 +449,12 @@ void async_loop() {
 
 	while (uwsgi.workers[uwsgi.mywid].manage_next_request) {
 
+        time_t deadline = uwsgi.workers[uwsgi.mywid].grace_reload_deadline;
+        if (deadline > 0 && deadline <= uwsgi_now()) {
+            uwsgi_log("worker reach reload dead line, exit now!!\n");
+            break;
+        }
+
 		now = (uint64_t) uwsgi_now();
 		if (uwsgi.async_runqueue) {
 			timeout = 0;

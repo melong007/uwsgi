@@ -2765,6 +2765,9 @@ struct uwsgi_server {
 	struct uwsgi_string_list *wait_for_socket;
 	int wait_for_socket_timeout;
 	int mem_collector_freq;
+
+	// uWSGI support toutiao grace-reload
+	int reload_interval;
 };
 
 struct uwsgi_rpc {
@@ -2961,6 +2964,7 @@ struct uwsgi_worker {
 
 	time_t cursed_at;
 	time_t no_mercy_at;
+	time_t grace_reload_deadline;
 
 	// signals managed by this worker
 	uint64_t signals;
@@ -3070,6 +3074,7 @@ pid_t spooler_start(struct uwsgi_spooler *);
 
 void uwsgi_curse(int, int);
 void uwsgi_curse_mule(int, int);
+void uwsgi_notify_worker_reload(int);
 void uwsgi_destroy_processes(void);
 
 void set_harakiri(int);

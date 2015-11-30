@@ -162,6 +162,7 @@ static struct uwsgi_option uwsgi_base_options[] = {
 	{"daemonize2", required_argument, 0, "daemonize uWSGI after app loading", uwsgi_opt_set_str, &uwsgi.daemonize2, 0},
 	{"stop", required_argument, 0, "stop an instance", uwsgi_opt_pidfile_signal, (void *) SIGINT, UWSGI_OPT_IMMEDIATE},
 	{"reload", required_argument, 0, "reload an instance", uwsgi_opt_pidfile_signal, (void *) SIGHUP, UWSGI_OPT_IMMEDIATE},
+	{"reload-interval", required_argument, 0, "The interval between reload two process", uwsgi_opt_set_int, &uwsgi.reload_interval, 0},
 	{"pause", required_argument, 0, "pause an instance", uwsgi_opt_pidfile_signal, (void *) SIGTSTP, UWSGI_OPT_IMMEDIATE},
 	{"suspend", required_argument, 0, "suspend an instance", uwsgi_opt_pidfile_signal, (void *) SIGTSTP, UWSGI_OPT_IMMEDIATE},
 	{"resume", required_argument, 0, "resume an instance", uwsgi_opt_pidfile_signal, (void *) SIGTSTP, UWSGI_OPT_IMMEDIATE},
@@ -1341,7 +1342,8 @@ void grace_them_all(int signum) {
 	if (uwsgi.lazy) {
 		for (i = 1; i <= uwsgi.numproc; i++) {
 			if (uwsgi.workers[i].pid > 0) {
-				uwsgi_curse(i, SIGHUP);
+				//uwsgi_curse(i, SIGHUP);
+				uwsgi_notify_worker_reload(i);
 			}
 		}
 		return;

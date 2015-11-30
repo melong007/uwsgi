@@ -15,6 +15,18 @@ uint64_t uwsgi_worker_exceptions(int wid) {
 	return total;
 }
 
+void uwsgi_notify_worker_reload(int wid) {
+    uwsgi.workers[wid].cursed_at = uwsgi_now();
+    uwsgi.workers[wid].no_mercy_at = uwsgi.workers[wid].cursed_at + uwsgi.worker_reload_mercy;
+
+    if (uwsgi.reload_interval <= 0) uwsgi.reload_interval = 1;
+
+    time_t timeout = (wid * uwsgi.reload_interval) % uwsgi.reload_mercy;
+    uwsgi.workers[wid].grace_reload_deadline = uwsgi_now() + timeout;
+    uwsgi.workers[wid].destroy = 1;
+    uwsgi_log("reload worker(%d) in %ld seconds\n", uwsgi.workers[wid].pid, timeout);
+}
+
 void uwsgi_curse(int wid, int sig) {
 	uwsgi.workers[wid].cursed_at = uwsgi_now();
         uwsgi.workers[wid].no_mercy_at = uwsgi.workers[wid].cursed_at + uwsgi.worker_reload_mercy;
@@ -676,6 +688,7 @@ int uwsgi_respawn_worker(int wid) {
 		// pid is updated by the master
 		//uwsgi.workers[uwsgi.mywid].pid = uwsgi.mypid;
 		// OVERENGINEERING (just to be safe)
+		uwsgi.workers[uwsgi.mywid].grace_reload_deadline = 0;
 		uwsgi.workers[uwsgi.mywid].id = uwsgi.mywid;
 		/*
 		   uwsgi.workers[uwsgi.mywid].harakiri = 0;
