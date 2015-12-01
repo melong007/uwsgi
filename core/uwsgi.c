@@ -3041,7 +3041,7 @@ unsafe:
 		struct uwsgi_spooler *uspool = uwsgi.spoolers;
 		while (uspool) {
 			// lock is required even in EXTERNAL mode
-			uspool->lock = uwsgi_lock_init(uwsgi_concat2("spooler on ", uspool->dir));
+			//uspool->lock = uwsgi_lock_init(uwsgi_concat2("spooler on ", uspool->dir));
 			if (uspool->mode == UWSGI_SPOOLER_EXTERNAL)
 				goto next;
 			create_signal_pipe(uspool->signal_pipe);
