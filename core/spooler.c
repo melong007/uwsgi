@@ -235,7 +235,7 @@ char *uwsgi_spool_request(struct wsgi_request *wsgi_req, char *buf, size_t len, 
 	}
 
 	// this lock is for threads, the pid value in filename will avoid multiprocess races
-	uwsgi_lock(uspool->lock);
+	//uwsgi_lock(uspool->lock);
 
 	// we increase it even if the request fails
 	internal_counter++;
@@ -252,7 +252,7 @@ char *uwsgi_spool_request(struct wsgi_request *wsgi_req, char *buf, size_t len, 
 		if (ret <= 0 || ret >= (int) filename_len) {
 			uwsgi_log("[uwsgi-spooler] error generating spooler filename\n");
 			free(filename);
-			uwsgi_unlock(uspool->lock);
+			//uwsgi_unlock(uspool->lock);
 			return NULL;
 		}
 		// no need to check for errors...
@@ -263,7 +263,7 @@ char *uwsgi_spool_request(struct wsgi_request *wsgi_req, char *buf, size_t len, 
 		if (ret <= 0 || ret >=(int)  filename_len) {
                         uwsgi_log("[uwsgi-spooler] error generating spooler filename\n");
 			free(filename);
-			uwsgi_unlock(uspool->lock);
+			//uwsgi_unlock(uspool->lock);
 			return NULL;
 		}
 	}
@@ -275,7 +275,7 @@ char *uwsgi_spool_request(struct wsgi_request *wsgi_req, char *buf, size_t len, 
 		if (ret <= 0 || ret >= (int) filename_len) {
                         uwsgi_log("[uwsgi-spooler] error generating spooler filename\n");
 			free(filename);
-			uwsgi_unlock(uspool->lock);
+			//uwsgi_unlock(uspool->lock);
 			return NULL;
 		}
 	}
@@ -284,7 +284,7 @@ char *uwsgi_spool_request(struct wsgi_request *wsgi_req, char *buf, size_t len, 
 	if (fd < 0) {
 		uwsgi_error_open(filename);
 		free(filename);
-		uwsgi_unlock(uspool->lock);
+		//uwsgi_unlock(uspool->lock);
 		return NULL;
 	}
 
@@ -294,7 +294,7 @@ char *uwsgi_spool_request(struct wsgi_request *wsgi_req, char *buf, size_t len, 
 	if (uwsgi_fcntl_lock(fd)) {
 		close(fd);
 		free(filename);
-		uwsgi_unlock(uspool->lock);
+		//uwsgi_unlock(uspool->lock);
 		return NULL;
 	}
 
@@ -356,7 +356,7 @@ char *uwsgi_spool_request(struct wsgi_request *wsgi_req, char *buf, size_t len, 
 		uwsgi_log("[spooler] written %lu bytes to file %s\n", (unsigned long) len + body_len + 4, filename);
 
 	// and here waiting threads can continue
-	uwsgi_unlock(uspool->lock);
+	//uwsgi_unlock(uspool->lock);
 
 /*	wake up the spoolers attached to the specified dir ... (HACKY) 
 	no need to fear races, as USR1 is harmless an all of the uWSGI processes...
@@ -378,7 +378,7 @@ char *uwsgi_spool_request(struct wsgi_request *wsgi_req, char *buf, size_t len, 
 
 
 clear:
-	uwsgi_unlock(uspool->lock);
+	//uwsgi_unlock(uspool->lock);
 	uwsgi_error("uwsgi_spool_request()/write()");
 	if (unlink(filename)) {
 		uwsgi_error("uwsgi_spool_request()/unlink()");

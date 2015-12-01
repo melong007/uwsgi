@@ -1135,7 +1135,7 @@ struct uwsgi_spooler {
 	pid_t pid;
 	uint64_t respawned;
 	uint64_t tasks;
-	struct uwsgi_lock_item *lock;
+	//struct uwsgi_lock_item *lock;
 	time_t harakiri;
 	time_t user_harakiri;
 
