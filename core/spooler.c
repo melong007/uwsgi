@@ -368,6 +368,7 @@ char *uwsgi_spool_request(struct wsgi_request *wsgi_req, char *buf, size_t len, 
 		if (!strcmp(spoolers->dir, uspool->dir)) {
 			if (spoolers->pid > 0 && spoolers->running == 0) {
 				(void) kill(spoolers->pid, SIGUSR1);
+				break;
 			}
 		}
 		spoolers = spoolers->next;
