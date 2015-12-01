@@ -586,8 +586,11 @@ void spooler_manage_task(struct uwsgi_spooler *uspool, char *dir, char *task) {
 
 			if (rlen != 4) {
 				// it could be here for broken file or just opened one
-				if (rlen < 0)
+				if (rlen < 0) {
 					uwsgi_error("read()");
+				}else if (uwsgi_now() - sf_lstat.st_mtime > 3600) {// XXX: hardcoded 1 hour
+					destroy_spool(dir, task); // we delete the old broken file;                   
+				}
 				uwsgi_protected_close(spool_fd);
 				return;
 			}
