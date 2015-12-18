@@ -1340,6 +1340,8 @@ void grace_them_all(int signum) {
 	int i;
 
 	if (uwsgi.lazy) {
+		//Fix lazy mode grace reload can't restart spooler
+		uwsgi_signal_spoolers(SIGKILL);
 		for (i = 1; i <= uwsgi.numproc; i++) {
 			if (uwsgi.workers[i].pid > 0) {
 				//uwsgi_curse(i, SIGHUP);
