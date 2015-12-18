@@ -1331,6 +1331,18 @@ void gracefully_kill_them_all(int signum) {
         uwsgi_destroy_processes();
 }
 
+static void uwsgi_signal_spoolers(int signum) {
+
+        struct uwsgi_spooler *uspool = uwsgi.spoolers;
+        while (uspool) {
+                if (uspool->pid > 0) {
+                        kill(uspool->pid, signum);
+                        uwsgi_log("killing the spooler with pid %d\n", uspool->pid);
+                }
+                uspool = uspool->next;
+        }
+
+}
 
 // graceful reload
 void grace_them_all(int signum) {
