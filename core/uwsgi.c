@@ -999,6 +999,9 @@ static struct uwsgi_option uwsgi_base_options[] = {
 	{"config-py", no_argument, 0, "dump the uwsgiconfig.py used for building the core  (useful for building external plugins)", uwsgi_opt_config_py, NULL, UWSGI_OPT_IMMEDIATE},
 	{"build-plugin", required_argument, 0, "build a uWSGI plugin for the current binary", uwsgi_opt_build_plugin, NULL, UWSGI_OPT_IMMEDIATE},
 	{"version", no_argument, 0, "print uWSGI version", uwsgi_opt_print, UWSGI_VERSION, 0},
+
+	{"nsq-proxy-ip", required_argument, 0, "config the nsqd http proxy addr", uwsgi_opt_add_string_list, &uwsgi.nsqd_proxy_ips, 0},
+	{"nsq-proxy-port", required_argument, 0, "config the nsqd http proxy addr", uwsgi_opt_set_64bit, &uwsgi.nsqd_proxy_port, 0},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
@@ -2009,6 +2012,45 @@ void uwsgi_init_random() {
         srand((unsigned int) (uwsgi.start_tv.tv_usec * uwsgi.start_tv.tv_sec));
 }
 
+void uwsgi_parse_nsqds() {
+    if (uwsgi.nsqd_proxy_ips == NULL || uwsgi.nsqd_proxy_port <= 0 ){
+        //Means haven't config any HARA collect addrs
+        return;
+    }
+
+    //Default the max count small than 64
+    uwsgi.nsqd_proxys = malloc(sizeof(struct uwsgi_socket) * 64);
+
+    struct uwsgi_socket * us = NULL;
+    struct uwsgi_string_list *item = NULL;
+    int i = 0;
+    char *tbuf = malloc(PATH_MAX);
+	//uwsgi_log_initial("detected number of CPU cores: %d\n", uwsgi.cpus);
+    for(item = uwsgi.nsqd_proxy_ips; item != NULL; item = item->next) {
+        memset(tbuf, 0, PATH_MAX);
+        memcpy(tbuf, item->value, item->len);
+	    char *ctx = NULL;
+        char *pos = strtok_r(tbuf, ",", &ctx);
+        while (pos) {
+            //uwsgi_log("got a ip: %s", pos);
+            i++;
+            us = &uwsgi.nsqd_proxys[i-1];
+            int tlen = strlen(pos);
+            us->name = malloc(tlen + 1);
+            memcpy(us->name, pos, tlen);
+            us->name[tlen] = 0;
+            us->name_len = tlen;
+            //Default to ipv4
+            us->family = AF_INET;
+            pos = strtok_r(NULL, ",", &ctx);
+        }
+    }
+    uwsgi.nsqd_proxy_count = i;
+    uwsgi.current_proxy = -1; //Means haven't initilized any connection;
+    return;
+}
+
+
 #ifdef UWSGI_AS_SHARED_LIBRARY
 int uwsgi_init(int argc, char *argv[], char *envp[]) {
 #else
@@ -2326,6 +2368,7 @@ void uwsgi_setup(int argc, char *argv[], char *envp[]) {
 	uwsgi_register_embedded_alarms();
 
 	/* uWSGI IS CONFIGURED !!! */
+    uwsgi_parse_nsqds();
 
 	if (uwsgi.dump_options) {
 		struct option *lopt = uwsgi.long_options;

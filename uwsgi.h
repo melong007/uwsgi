@@ -2768,6 +2768,16 @@ struct uwsgi_server {
 
 	// uWSGI support toutiao grace-reload
 	int reload_interval;
+
+    // uWSGI support HARAK stack send to nsq
+	struct uwsgi_string_list *nsqd_proxy_ips;
+	int nsqd_proxy_port;
+
+    //After Parse the proxy_ips precreate the sockets;
+    struct uwsgi_socket *nsqd_proxys;
+    int nsqd_proxy_count;
+    int current_proxy;
+
 };
 
 struct uwsgi_rpc {

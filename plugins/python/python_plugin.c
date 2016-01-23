@@ -1819,6 +1819,152 @@ int uwsgi_python_mule_msg(char *message, size_t len) {
 	return 1;
 }
 
+static int
+uwsgi_connect_nsqd_proxy()
+{
+    //choice a backend nsqd,randomly;
+    int i;
+    struct uwsgi_socket * us = NULL;
+    i = random() % uwsgi.nsqd_proxy_count;
+    us = &uwsgi.nsqd_proxys[i];
+
+    int fd;
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (fd < 0 ) {
+		uwsgi_error("socket() for nsqd proxy failed");
+        goto failed;
+    }
+
+    //Set to nonblocked
+    if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == -1) {
+		uwsgi_error("fcnt O_NONBLOCK for nsqd proxy failed");
+        goto failed;
+    }
+
+    //connect to nsqd proxy;
+    struct sockaddr_in  sin;
+    int socklen = sizeof(struct sockaddr_in);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(uwsgi.nsqd_proxy_port);
+    if (inet_pton(AF_INET, us->name, &sin.sin_addr.s_addr) == 0) {
+        uwsgi_error("inet_pton() for nsqd proxy addr failed");
+        goto failed;
+    }
+
+    int rc;
+    rc = connect(fd, &sin, socklen);
+    if (rc == -1 && errno != EINPROGRESS) {
+        uwsgi_error("connect() for nsqd proxy addr failed");
+        goto failed;
+    }
+
+    us->fd = fd;
+    uwsgi.current_proxy = i;
+
+    return 0;
+failed:
+    close(fd);
+    return -1;
+}
+
+static struct uwsgi_buffer *
+uwsgi_pack_header(struct uwsgi_buffer *ub_body)
+{
+    int n = -1;
+    struct uwsgi_buffer * ub_hd = uwsgi_buffer_new(uwsgi.page_size);
+    if (ub_hd == NULL) {
+        uwsgi_error("uwsgi_buffer_new failed");
+        return NULL;
+    }
+    char buf[512];
+
+    char * request_line = "POST /put?topic=uwsgi_harakiri_stack HTTP/1.1\r\n";
+    uwsgi_buffer_append(ub_hd, request_line, strlen(request_line));
+
+    char * host = "Host: nsqd_cluster4\r\n";
+    uwsgi_buffer_append(ub_hd, host, strlen(host));
+
+    char * content_type= "Content-Type: plain/text\r\n";
+    uwsgi_buffer_append(ub_hd, content_type, strlen(content_type));
+
+    //add content-length and http delemite
+    memset(buf, 0, 512);
+    n = snprintf(buf, 512, "Content-Length: %d\r\n\r\n", ub_body->pos);
+    if (n < 0) {
+        uwsgi_error("snprintf() Content-Length failed");
+        uwsgi_buffer_destroy(ub_hd);
+        return NULL;
+    }
+    uwsgi_buffer_append(ub_hd, buf, strlen(buf));
+
+    return ub_hd;
+}
+
+static int
+uwsgi_send_nsqd_proxy(struct uwsgi_buffer *ub_hd, struct uwsgi_buffer *ub_body)
+{
+    struct uwsgi_socket *us = &uwsgi.nsqd_proxys[uwsgi.current_proxy];
+    //Checkt the socket status
+    int err;
+    int rc;
+    socklen_t len = sizeof(int);
+    if (us->fd > 0) {
+        if (getsockopt(us->fd, SOL_SOCKET, SO_ERROR, (void *) &err, &len) == -1) {
+            err = errno;
+        }
+        if (err) {
+            //the socket must be bad, so close it;
+            close(us->fd);
+            //reset proxy
+            us->fd = -1;
+            uwsgi.current_proxy = -1;
+        }
+    }
+    //do a reconnect
+    if (uwsgi.current_proxy == -1) {
+        rc = uwsgi_connect_nsqd_proxy();
+        if (rc == -1 || uwsgi.current_proxy == -1)
+            goto failed;
+    }
+
+    us = &uwsgi.nsqd_proxys[uwsgi.current_proxy];
+
+    //send the http header?
+    int left = ub_hd->pos;
+    int pos = 0;
+    int n = 0;
+    while (left > 0) {
+        n = send(us->fd, ub_hd->buf + pos, left, 0);
+        if (n == -1 ) {
+            if (errno == EAGAIN || errno == EINTR)
+                continue;
+            else
+                goto failed;
+        }
+        left -= n;
+    }
+
+    //send the http body?
+    left = ub_body->pos;
+    while (left > 0) {
+        n = send(us->fd, ub_body->buf + pos, left, 0);
+        if (n == -1 ) {
+            if (errno == EAGAIN || errno == EINTR)
+                continue;
+            else
+                goto failed;
+        }
+        left -= n;
+    }
+
+    return 0;
+
+failed:
+    uwsgi_error("send to nsqd failed, abort this message");
+    return -1;
+}
+
 static void uwsgi_python_harakiri(int wid) {
 
 	if (up.tracebacker) {
@@ -1826,20 +1972,44 @@ static void uwsgi_python_harakiri(int wid) {
         	char buf[8192];
 		char *wid_str = uwsgi_num2str(wid);
 		char *address = uwsgi_concat2(up.tracebacker, wid_str);
+        struct uwsgi_buffer *ub = NULL;
 
         	int fd = uwsgi_connect(address, -1, 0);
 		if (fd < 1)
 			goto exit;
+        //connect to nsqd_proxys, use the short connection
+        //TODO: AF_INET6 may be need
+        if (uwsgi.nsqd_proxy_ips != NULL && uwsgi.current_proxy == -1) {
+            //Means have configed HARA collect addrs
+            uwsgi_connect_nsqd_proxy();
+        }
 
+        if (0 <= uwsgi.current_proxy && uwsgi.current_proxy < uwsgi.nsqd_proxy_count ) {
+            ub = uwsgi_buffer_new(2 * uwsgi.page_size);
+        }
 		for(;;) {
                 	int ret = uwsgi_waitfd(fd, uwsgi.socket_timeout);
                 	if (ret <= 0) goto cleanup;
                 	ssize_t len = read(fd, buf, 8192);
                 	if (len <= 0) goto cleanup;
                 	uwsgi_log("%.*s", (int) len, buf);
+
+                    if (ub != NULL) {
+                        uwsgi_buffer_append(ub, buf, len);
+                    }
 		}
 
 cleanup:
+        //send the ub data to nsqd
+        if (ub != NULL) {
+            struct uwsgi_buffer *ub_hd = NULL;
+            ub_hd = uwsgi_pack_header(ub);
+            if (ub_hd != NULL) {
+                uwsgi_send_nsqd_proxy(ub_hd, ub);
+                uwsgi_buffer_destroy(ub);
+                uwsgi_buffer_destroy(ub_hd);
+            }
+        }
 		close(fd);
 exit:
 		free(wid_str);
