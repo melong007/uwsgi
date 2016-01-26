@@ -1832,13 +1832,13 @@ uwsgi_connect_nsqd_proxy()
     fd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (fd < 0 ) {
-		uwsgi_error("socket() for nsqd proxy failed");
+        uwsgi_error("socket() for nsqd proxy failed");
         goto failed;
     }
 
     //Set to nonblocked
     if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == -1) {
-		uwsgi_error("fcnt O_NONBLOCK for nsqd proxy failed");
+        uwsgi_error("fcnt O_NONBLOCK for nsqd proxy failed");
         goto failed;
     }
 
@@ -2006,9 +2006,9 @@ cleanup:
             ub_hd = uwsgi_pack_header(ub);
             if (ub_hd != NULL) {
                 uwsgi_send_nsqd_proxy(ub_hd, ub);
-                uwsgi_buffer_destroy(ub);
                 uwsgi_buffer_destroy(ub_hd);
             }
+            uwsgi_buffer_destroy(ub);
         }
 		close(fd);
 exit:

@@ -2029,7 +2029,7 @@ void uwsgi_parse_nsqds() {
     for(item = uwsgi.nsqd_proxy_ips; item != NULL; item = item->next) {
         memset(tbuf, 0, PATH_MAX);
         memcpy(tbuf, item->value, item->len);
-	    char *ctx = NULL;
+        char *ctx = NULL;
         char *pos = strtok_r(tbuf, ",", &ctx);
         while (pos) {
             //uwsgi_log("got a ip: %s", pos);
