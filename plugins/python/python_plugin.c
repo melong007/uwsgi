@@ -1985,7 +1985,11 @@ static void uwsgi_python_harakiri(int wid) {
         }
 
         if (0 <= uwsgi.current_proxy && uwsgi.current_proxy < uwsgi.nsqd_proxy_count ) {
-            ub = uwsgi_buffer_new(2 * uwsgi.page_size);
+            ub = uwsgi_buffer_new(2 * uwsgi.page_size + uwsgi.hostname_len);
+            uwsgi_buffer_append(ub, "\"", 1);
+            uwsgi_buffer_append(ub, uwsgi.hostname, uwsgi.hostname_len);
+            uwsgi_buffer_append(ub, "\":", 1);
+            uwsgi_buffer_append(ub, "\"", 1);
         }
 		for(;;) {
                 	int ret = uwsgi_waitfd(fd, uwsgi.socket_timeout);
@@ -2002,6 +2006,7 @@ static void uwsgi_python_harakiri(int wid) {
 cleanup:
         //send the ub data to nsqd
         if (ub != NULL) {
+            uwsgi_buffer_append(ub, "\"", 1);
             struct uwsgi_buffer *ub_hd = NULL;
             ub_hd = uwsgi_pack_header(ub);
             if (ub_hd != NULL) {
