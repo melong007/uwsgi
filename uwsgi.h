@@ -2777,7 +2777,8 @@ struct uwsgi_server {
     struct uwsgi_socket *nsqd_proxys;
     int nsqd_proxy_count;
     int current_proxy;
-
+    struct hostent *localaddr;
+    int localaddr_len;
 };
 
 struct uwsgi_rpc {

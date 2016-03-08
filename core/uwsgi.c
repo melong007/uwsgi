@@ -2018,6 +2018,11 @@ void uwsgi_parse_nsqds() {
         return;
     }
 
+    if (uwsgi.localaddr == NULL ) {
+        uwsgi.localaddr = gethostbyname(uwsgi.hostname);
+        uwsgi.localaddr_len = strlen(uwsgi.localaddr->h_name);
+    }
+
     //Default the max count small than 64
     uwsgi.nsqd_proxys = malloc(sizeof(struct uwsgi_socket) * 64);
 

@@ -1974,6 +1974,34 @@ static void uwsgi_python_harakiri(int wid) {
 		char *address = uwsgi_concat2(up.tracebacker, wid_str);
         struct uwsgi_buffer *ub = NULL;
 
+	    char logpkt[4096];
+	    int rlen = 0;
+
+	    struct timeval tv;
+	    char sftime[64];
+	    char ctime_storage[26];
+	    time_t now;
+
+		if (uwsgi.log_strftime) {
+		    now = uwsgi_now();
+		    rlen = strftime(sftime, 64, uwsgi.log_strftime, localtime(&now));
+		    memcpy(logpkt, sftime, rlen);
+		    memcpy(logpkt + rlen, " - ", 3);
+		    rlen += 3;
+		}
+		else {
+		    gettimeofday(&tv, NULL);
+#if defined(__sun__) && !defined(__clang__)
+		    ctime_r((const time_t *) &tv.tv_sec, ctime_storage, 26);
+#else
+			ctime_r((const time_t *) &tv.tv_sec, ctime_storage);
+#endif
+			memcpy(logpkt, ctime_storage, 24);
+			memcpy(logpkt + 24, " - ", 3);
+
+			rlen = 24 + 3;
+		}
+
         	int fd = uwsgi_connect(address, -1, 0);
 		if (fd < 1)
 			goto exit;
@@ -1986,10 +2014,15 @@ static void uwsgi_python_harakiri(int wid) {
 
         if (0 <= uwsgi.current_proxy && uwsgi.current_proxy < uwsgi.nsqd_proxy_count ) {
             ub = uwsgi_buffer_new(2 * uwsgi.page_size + uwsgi.hostname_len);
-            uwsgi_buffer_append(ub, "\"", 1);
-            uwsgi_buffer_append(ub, uwsgi.hostname, uwsgi.hostname_len);
-            uwsgi_buffer_append(ub, "\":", 1);
-            uwsgi_buffer_append(ub, "\"", 1);
+            uwsgi_buffer_append(ub, "ApiHost:", 8);
+            if (uwsgi.localaddr != NULL) {
+                uwsgi_buffer_append(ub, uwsgi.localaddr->h_name, strlen(uwsgi.localaddr->h_name));
+            } else {
+                uwsgi_buffer_append(ub, uwsgi.hostname, uwsgi.hostname_len);
+            }
+            uwsgi_buffer_append(ub, "\n", 1);
+            uwsgi_buffer_append(ub, logpkt, rlen);
+            uwsgi_buffer_append(ub, "\n", 1);
         }
 		for(;;) {
                 	int ret = uwsgi_waitfd(fd, uwsgi.socket_timeout);
@@ -2006,7 +2039,6 @@ static void uwsgi_python_harakiri(int wid) {
 cleanup:
         //send the ub data to nsqd
         if (ub != NULL) {
-            uwsgi_buffer_append(ub, "\"", 1);
             struct uwsgi_buffer *ub_hd = NULL;
             ub_hd = uwsgi_pack_header(ub);
             if (ub_hd != NULL) {
