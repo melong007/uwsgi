@@ -2772,6 +2772,7 @@ struct uwsgi_server {
     // uWSGI support HARAK stack send to nsq
 	struct uwsgi_string_list *nsqd_proxy_ips;
 	int nsqd_proxy_port;
+	char *nsq_topic;
 
     //After Parse the proxy_ips precreate the sockets;
     struct uwsgi_socket *nsqd_proxys;

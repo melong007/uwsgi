@@ -1002,6 +1002,7 @@ static struct uwsgi_option uwsgi_base_options[] = {
 
 	{"nsq-proxy-ip", required_argument, 0, "config the nsqd http proxy addr", uwsgi_opt_add_string_list, &uwsgi.nsqd_proxy_ips, 0},
 	{"nsq-proxy-port", required_argument, 0, "config the nsqd http proxy addr", uwsgi_opt_set_64bit, &uwsgi.nsqd_proxy_port, 0},
+	{"nsq-topic", required_argument, 0, "nsq topic name", uwsgi_opt_set_str, &uwsgi.nsq_topic, 0},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 

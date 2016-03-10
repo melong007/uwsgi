@@ -1879,8 +1879,20 @@ uwsgi_pack_header(struct uwsgi_buffer *ub_body)
     }
     char buf[512];
 
-    char * request_line = "POST /put?topic=uwsgi_harakiri_stack HTTP/1.1\r\n";
-    uwsgi_buffer_append(ub_hd, request_line, strlen(request_line));
+    char * req_part1 = "POST /put?topic=";
+    uwsgi_buffer_append(ub_hd, req_part1, strlen(req_part1));
+
+    char * req_part2 = NULL;
+    if (uwsgi.nsq_topic != NULL) {
+        req_part2 = uwsgi.nsq_topic;
+        uwsgi_log("the uwsgi nsq_topic: %s\n", uwsgi.nsq_topic);
+    } else {
+        req_part2 = "uwsgi_harakiri_stack";
+    }
+    uwsgi_buffer_append(ub_hd, req_part2, strlen(req_part2));
+
+    char * req_part3 = " HTTP/1.1\r\n";
+    uwsgi_buffer_append(ub_hd, req_part3, strlen(req_part3));
 
     char * host = "Host: nsqd_cluster4\r\n";
     uwsgi_buffer_append(ub_hd, host, strlen(host));
@@ -1908,6 +1920,7 @@ uwsgi_send_nsqd_proxy(struct uwsgi_buffer *ub_hd, struct uwsgi_buffer *ub_body)
     //Checkt the socket status
     int err;
     int rc;
+    char buf[8192];
     socklen_t len = sizeof(int);
     if (us->fd > 0) {
         if (getsockopt(us->fd, SOL_SOCKET, SO_ERROR, (void *) &err, &len) == -1) {
@@ -1958,6 +1971,25 @@ uwsgi_send_nsqd_proxy(struct uwsgi_buffer *ub_hd, struct uwsgi_buffer *ub_body)
         left -= n;
     }
 
+    //Read from the nsqd
+    memset(buf, 0, 8192);
+    pos = 0;
+    n = read(us->fd, buf, 8192);
+    /*while ( pos < 8192) {
+        n = read(us->fd, buf + pos, 8192 - pos);
+	    sleep(3);
+        if (n == -1) {
+            if (errno == EAGAIN || errno == EINTR) {
+                uwsgi_log("##### read the nsqd faild\n");
+                continue;
+            } else {
+                break;
+            }
+        }
+        pos += n;
+    }*/
+
+    uwsgi_log("######Send to nsqd proxy get following resp: %s\n", buf);
     return 0;
 
 failed:
