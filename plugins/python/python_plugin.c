@@ -2047,11 +2047,11 @@ static void uwsgi_python_harakiri(int wid) {
         if (0 <= uwsgi.current_proxy && uwsgi.current_proxy < uwsgi.nsqd_proxy_count ) {
             ub = uwsgi_buffer_new(2 * uwsgi.page_size + uwsgi.hostname_len);
             uwsgi_buffer_append(ub, "ApiHost:", 8);
-            if (uwsgi.localaddr != NULL) {
-                uwsgi_buffer_append(ub, uwsgi.localaddr->h_name, strlen(uwsgi.localaddr->h_name));
-            } else {
-                uwsgi_buffer_append(ub, uwsgi.hostname, uwsgi.hostname_len);
-            }
+            //if (uwsgi.localaddr != NULL) {
+            //    uwsgi_buffer_append(ub, uwsgi.localaddr->h_name, strlen(uwsgi.localaddr->h_name));
+            //} else {
+            uwsgi_buffer_append(ub, uwsgi.hostname, uwsgi.hostname_len);
+            //}
             uwsgi_buffer_append(ub, "\n", 1);
             uwsgi_buffer_append(ub, logpkt, rlen);
             uwsgi_buffer_append(ub, "\n", 1);
