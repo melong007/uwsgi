@@ -1902,7 +1902,7 @@ uwsgi_pack_header(struct uwsgi_buffer *ub_body)
 
     //add content-length and http delemite
     memset(buf, 0, 512);
-    n = snprintf(buf, 512, "Content-Length: %d\r\n\r\n", ub_body->pos);
+    n = snprintf(buf, 512, "Content-Length: %d\r\n\r\n", (int)ub_body->pos);
     if (n < 0) {
         uwsgi_error("snprintf() Content-Length failed");
         uwsgi_buffer_destroy(ub_hd);

@@ -21,7 +21,12 @@ void uwsgi_notify_worker_reload(int wid) {
 
     if (uwsgi.reload_interval <= 0) uwsgi.reload_interval = 1;
 
-    time_t timeout = (wid * uwsgi.reload_interval) % uwsgi.reload_mercy;
+    time_t timeout = 0;
+    if (uwsgi.reload_mercy > 0) {
+        timeout = (wid * uwsgi.reload_interval) % uwsgi.reload_mercy;
+    }else{
+        timeout = wid;
+    }
     uwsgi.workers[wid].grace_reload_deadline = uwsgi_now() + timeout;
     uwsgi.workers[wid].destroy = 1;
     uwsgi_log("reload worker(%d) in %ld seconds\n", uwsgi.workers[wid].pid, timeout);
