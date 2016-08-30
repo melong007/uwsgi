@@ -2780,6 +2780,14 @@ struct uwsgi_server {
     int current_proxy;
     struct hostent *localaddr;
     int localaddr_len;
+
+    // Support restart uwsgi worker after continues 500 response
+    int inter_error_reload;
+    int inter_error;
+    time_t *last_timestamp_reload;
+
+    // Support set default timeout for epoll_wait
+    int timer_resolution;
 };
 
 struct uwsgi_rpc {

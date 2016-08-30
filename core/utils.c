@@ -1513,6 +1513,11 @@ int wsgi_req_accept(int queue, struct wsgi_request *wsgi_req) {
 		uwsgi_sock = uwsgi.sockets;
 	}
 
+    //Set the event_queue_wait with default timeout
+    if (timeout < 0 && uwsgi.timer_resolution > 0) {
+        timeout = uwsgi.timer_resolution;
+    }
+
 	ret = event_queue_wait(queue, timeout, &interesting_fd);
 	if (ret < 0) {
 		thunder_unlock;
