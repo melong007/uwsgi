@@ -1006,6 +1006,7 @@ static struct uwsgi_option uwsgi_base_options[] = {
 
 	{"inter-error-reload", required_argument, 0, "config the uwsgi worker restart after how many(default is disabled) continues 500 resp", uwsgi_opt_set_64bit, &uwsgi.inter_error_reload, 0},
 	{"timer-resolution", required_argument, 0, "config the uwsgi worker default timeout for epoll_wait", uwsgi_opt_set_64bit, &uwsgi.timer_resolution, 0},
+	{"subworker", required_argument, 0, "config the uwsgi worker default timeout for epoll_wait", uwsgi_opt_set_64bit, &uwsgi.subworker, 0},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
@@ -2016,6 +2017,75 @@ void uwsgi_init_random() {
         srand((unsigned int) (uwsgi.start_tv.tv_usec * uwsgi.start_tv.tv_sec));
 }
 
+int create_init_req_pipe() {
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, uwsgi.init_req_pipe)) {
+		uwsgi_error("create_init_req_pipe()/socketpair() failed \n");
+		return -1;
+	}
+	uwsgi_socket_nb(uwsgi.init_req_pipe[0]);
+	uwsgi_socket_nb(uwsgi.init_req_pipe[1]);
+    char msg[] = "GET /api/2/article/v20/stream/?category=news_society&count=20&min_behot_time=1436962307&loc_mode=5&loc_time=1436961223&latitude=26.044166666666666&longitude=119.32361111111112&city=%E7%A6%8F%E5%B7%9E&lac=1001&cid=11731&iid=2744457812&device_id=2775695862&ac=mobile&channel=baidu&aid=13&app_name=news_article&version_code=410&device_platform=android&device_type=HUAWEI%20C8817E&os_api=19&os_version=4.4.4&uuid=A000004F644477&openudid=b0f4a5fa761cc38b HTTP/1.1\r\nUser-Agent: curl/7.38.0\r\nHost: ic.snssdk.com\r\n\r\n";
+    if (write(uwsgi.init_req_pipe[1], msg, sizeof(msg)) != sizeof (msg)) {
+		close(uwsgi.init_req_pipe[0]);
+		close(uwsgi.init_req_pipe[1]);
+		uwsgi_error("create_init_req_pipe()/write() init_req_pipe[1] failed \n");
+		return -1;
+	}
+    return 0;
+}
+
+int init_fake_req() {
+	long core_id = 0 ;
+    struct uwsgi_socket *uwsgi_sock;
+
+
+	if (uwsgi.lazy || uwsgi.lazy_apps) {
+        return 0;
+    }
+
+	struct wsgi_request *wsgi_req = &uwsgi.workers[uwsgi.mywid].cores[core_id].req;
+
+    //Set this request as faked 
+    wsgi_req->fake_req = 1;
+
+    wsgi_req_setup(wsgi_req, core_id, NULL);
+
+    //Without need to do accept, just need set the pipe read fd;??
+    wsgi_req->fd = uwsgi.init_req_pipe[0];
+    uwsgi_sock = uwsgi.sockets;
+    while (uwsgi_sock != NULL) {
+        if (strncmp(uwsgi_sock->proto_name, "http", 4) == 0) {
+            break;
+        }
+    }
+    if (uwsgi_sock == NULL) {
+        uwsgi_error("Haven't find http-socket, init_fake_req failed \n");
+        return -1;
+    }
+
+	wsgi_req->socket = uwsgi_sock;
+    int ret = wsgi_req->socket->proto(wsgi_req);
+    if (ret != UWSGI_OK) {
+        uwsgi_error("uwsgi_proto_http_parser() error, init_fake_req failed \n");
+        return -1;
+    }
+
+    printf("init_fake_req() call python vm to run the fake request\n");
+	wsgi_req->async_status = uwsgi.p[wsgi_req->uh->modifier1]->request(wsgi_req);
+
+    char buf[40960];
+    memset(buf, 0, 40960);
+    int read_fd = uwsgi.init_req_pipe[1];
+    if (read(read_fd, buf, 40960) > 0) {
+        printf("the fake request response: %s\n", buf);
+    } else if (read(uwsgi.init_req_pipe[0], buf, 40960) > 0) {
+        printf("the fake request response: %s\n", buf);
+    }
+    uwsgi_close_request(wsgi_req);
+    return 0;
+}
+
+
 void uwsgi_parse_nsqds() {
     if (uwsgi.nsqd_proxy_ips == NULL || uwsgi.nsqd_proxy_port <= 0 ){
         //Means haven't config any HARA collect addrs
@@ -2378,6 +2448,12 @@ void uwsgi_setup(int argc, char *argv[], char *envp[]) {
 
 	/* uWSGI IS CONFIGURED !!! */
     uwsgi_parse_nsqds();
+
+    /* Create the init_req_pipe */
+    if (create_init_req_pipe() != 0) {
+        uwsgi_log("***\n*** init_req_pipe failed, Start uwsgi Failed ***\n***\n");
+        exit(1);
+    }
 
 	if (uwsgi.dump_options) {
 		struct option *lopt = uwsgi.long_options;
@@ -3273,6 +3349,8 @@ next2:
 	uwsgi_notify_ready();
 	uwsgi.current_time = uwsgi_now();
 
+    //Here we init_fake_req()
+    init_fake_req();
 	// here we spawn the workers...
 	if (!uwsgi.status.is_cheap) {
 		if (uwsgi.cheaper && uwsgi.cheaper_count) {
@@ -3538,6 +3616,10 @@ void uwsgi_worker_run() {
 }
 
 
+void uwsgi_brother_run() {
+
+}
+
 void uwsgi_ignition() {
 
 	int i;
@@ -3588,26 +3670,46 @@ void uwsgi_ignition() {
 		}
 	}
 
-	if (uwsgi.loop) {
-		void (*u_loop) (void) = uwsgi_get_loop(uwsgi.loop);
-		if (!u_loop) {
-			uwsgi_log("unavailable loop engine !!!\n");
-			exit(1);
-		}
-		if (uwsgi.mywid == 1) {
-			uwsgi_log("*** running %s loop engine [addr:%p] ***\n", uwsgi.loop, u_loop);
-		}
-		u_loop();
-		uwsgi_log("your loop engine died. R.I.P.\n");
-	}
-	else {
-		if (uwsgi.async < 2) {
-			simple_loop();
-		}
-		else {
-			async_loop();
-		}
-	}
+    /*if (uwsgi.mywid == 1) {
+        //init_fake_req();
+        //Here, respawn_workers, we need 
+        for (i = 2; i <= uwsgi.subworkers; i++) {
+            if (uwsgi_respawn_worker(i))
+                break;
+            uwsgi.respawn_delta = uwsgi_now();
+        }
+        
+        if (uwsgi.mywid == 1) {
+            //Watch the subworkers?
+            uwsgi_brother_run();
+        } else if (1 < uwsgi.mywid && uwsgi.mywid <= uwsgi.subworkers) {
+            //Reinit the really worker?
+            uwsgi_run();
+        } else {
+            uwsgi_error("***** Help uwsgi subworker scheme has fatal error*******\n");
+        }
+    } else { */
+        if (uwsgi.loop) {
+            void (*u_loop) (void) = uwsgi_get_loop(uwsgi.loop);
+            if (!u_loop) {
+                uwsgi_log("unavailable loop engine !!!\n");
+                exit(1);
+            }
+            if (uwsgi.mywid == 1) {
+                uwsgi_log("*** running %s loop engine [addr:%p] ***\n", uwsgi.loop, u_loop);
+            }
+            u_loop();
+            uwsgi_log("your loop engine died. R.I.P.\n");
+        }
+        else {
+            if (uwsgi.async < 2) {
+                simple_loop();
+            }
+            else {
+                async_loop();
+            }
+        }
+    //}
 
 	// end of the process...
 	end_me(0);

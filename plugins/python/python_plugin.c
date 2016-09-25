@@ -15,6 +15,8 @@ struct uwsgi_python up;
 
 extern PyTypeObject uwsgi_InputType;
 
+void uwsgi_python_post_fork(); 
+
 void uwsgi_opt_pythonpath(char *opt, char *value, void *foobar) {
 
 	int i;
@@ -290,9 +292,7 @@ ready:
 #endif
 
 	uwsgi_log_initial("Python main interpreter initialized at %p\n", up.main_thread);
-
 	return 1;
-
 }
 
 void uwsgi_python_reset_random_seed() {

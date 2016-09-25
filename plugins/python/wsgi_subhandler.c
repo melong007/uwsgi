@@ -116,6 +116,64 @@ static void uwsgi_python_consume_file_wrapper_read(struct wsgi_request *wsgi_req
         Py_DECREF(read_method);
 }
 
+void uwsgi_get_py_modules(struct wsgi_request *wsgi_req, struct uwsgi_app *wi) {
+
+    int i = 0;
+    if (wsgi_req->fake_req == 1 ) {
+
+        PyObject* modules = PyImport_GetModuleDict();
+        if (PyDict_Check(modules)){
+            uwsgi_log("Got modules dict\n");
+            PyObject* keys = PyDict_Keys(modules);
+            if (PyList_Check(keys)) {
+                int len = PyList_Size(keys);
+                uwsgi_log("the modules keys, len: %d\n", len);
+                for (i= len - 1 ; i > 0; i--) {
+                    PyObject * mname = PyList_GetItem(keys, i);
+                    if (PyString_Check(mname)) {
+                        //uwsgi_log("the module name: %s\n", PyString_AsString(mname));
+                        ;
+                    } else {
+                        //uwsgi_log("got invalid module, index: %d\n", i);
+                        continue;
+                    }
+                }
+            } else {
+                uwsgi_log("Got modules failed\n");
+            }
+        }
+
+        /*uwsgi_error("Get the fake request modules\n");
+          char * lines = "import os,sys\n"\
+          "result = ' '.join(sys.modules.keys())";
+          PyRun_SimpleString(lines);
+          PyObject * module = PyImport_AddModule("__main__"); // borrowed reference
+
+          assert(module);                                     // __main__ should always exist
+          PyObject * dictionary = PyModule_GetDict(module);   // borrowed reference
+          assert(dictionary);                                 // __main__ should have a dictionary
+
+          PyObject * result =
+          PyDict_GetItemString(dictionary, "result");     // borrowed reference
+
+          assert(result);                                     // just added result
+          assert(PyString_Check(result));                     // result should be an integer
+
+          char * result_value = PyString_AsString(result);    // already checked that it is an int
+          printf("the result_value: %s\n", result_value);
+
+          PyObject* myModuleString = PyString_FromString((char*)"pyutil.program.modules");
+          PyObject* myModule = PyImport_Import(myModuleString);
+          PyObject* myFunction = PyObject_GetAttrString(myModule,(char*)"myabs");
+          PyObject* args = PyTuple_Pack(1,  PyFloat_FromDouble(2.0));
+          PyObject* myResult = PyObject_CallObject(myFunction, args);
+          */
+    }
+
+    uwsgi_log("the last modules index:%d\n", i);
+}
+
+
 void *uwsgi_request_subhandler_wsgi(struct wsgi_request *wsgi_req, struct uwsgi_app *wi) {
 
 
@@ -234,7 +292,10 @@ void *uwsgi_request_subhandler_wsgi(struct wsgi_request *wsgi_req, struct uwsgi_
 
 	// call
 	PyTuple_SetItem(wsgi_req->async_args, 0, wsgi_req->async_environ);
-	return python_call(wsgi_req->async_app, wsgi_req->async_args, uwsgi.catch_exceptions, wsgi_req);
+	PyObject* ret = python_call(wsgi_req->async_app, wsgi_req->async_args, uwsgi.catch_exceptions, wsgi_req);
+
+    uwsgi_get_py_modules(wsgi_req, wi);
+    return ret;
 }
 
 int uwsgi_response_subhandler_wsgi(struct wsgi_request *wsgi_req) {

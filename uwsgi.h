@@ -1587,6 +1587,9 @@ struct wsgi_request {
 	int do_not_account_avg_rt;
 	// used for protocol parsers requiring EOF signaling
 	int proto_parser_eof;
+    
+    // Is faked request?
+    int fake_req;
 };
 
 
@@ -2788,6 +2791,14 @@ struct uwsgi_server {
 
     // Support set default timeout for epoll_wait
     int timer_resolution;
+
+    // Preload the code by fake a request through a PIPE
+    // @1. Create a pipe
+    // @2. Fake a http Request send to pipe
+    // @3. Parse the Http Request and Use the app engine to serve the request
+    int init_req_pipe[2];
+
+    int subworker;
 };
 
 struct uwsgi_rpc {

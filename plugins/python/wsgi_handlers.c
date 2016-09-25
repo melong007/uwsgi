@@ -432,9 +432,7 @@ end:
 	up.reset_ts(wsgi_req, wi);
 
 clear2:
-
 	return UWSGI_OK;
-
 }
 
 void uwsgi_after_request_wsgi(struct wsgi_request *wsgi_req) {
