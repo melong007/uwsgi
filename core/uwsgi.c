@@ -2034,58 +2034,6 @@ int create_init_req_pipe() {
     return 0;
 }
 
-int init_fake_req() {
-	long core_id = 0 ;
-    struct uwsgi_socket *uwsgi_sock;
-
-
-	if (uwsgi.lazy || uwsgi.lazy_apps) {
-        return 0;
-    }
-
-	struct wsgi_request *wsgi_req = &uwsgi.workers[uwsgi.mywid].cores[core_id].req;
-
-    //Set this request as faked 
-    wsgi_req->fake_req = 1;
-
-    wsgi_req_setup(wsgi_req, core_id, NULL);
-
-    //Without need to do accept, just need set the pipe read fd;??
-    wsgi_req->fd = uwsgi.init_req_pipe[0];
-    uwsgi_sock = uwsgi.sockets;
-    while (uwsgi_sock != NULL) {
-        if (strncmp(uwsgi_sock->proto_name, "http", 4) == 0) {
-            break;
-        }
-    }
-    if (uwsgi_sock == NULL) {
-        uwsgi_error("Haven't find http-socket, init_fake_req failed \n");
-        return -1;
-    }
-
-	wsgi_req->socket = uwsgi_sock;
-    int ret = wsgi_req->socket->proto(wsgi_req);
-    if (ret != UWSGI_OK) {
-        uwsgi_error("uwsgi_proto_http_parser() error, init_fake_req failed \n");
-        return -1;
-    }
-
-    printf("init_fake_req() call python vm to run the fake request\n");
-	wsgi_req->async_status = uwsgi.p[wsgi_req->uh->modifier1]->request(wsgi_req);
-
-    char buf[40960];
-    memset(buf, 0, 40960);
-    int read_fd = uwsgi.init_req_pipe[1];
-    if (read(read_fd, buf, 40960) > 0) {
-        printf("the fake request response: %s\n", buf);
-    } else if (read(uwsgi.init_req_pipe[0], buf, 40960) > 0) {
-        printf("the fake request response: %s\n", buf);
-    }
-    uwsgi_close_request(wsgi_req);
-    return 0;
-}
-
-
 void uwsgi_parse_nsqds() {
     if (uwsgi.nsqd_proxy_ips == NULL || uwsgi.nsqd_proxy_port <= 0 ){
         //Means haven't config any HARA collect addrs
@@ -3349,8 +3297,6 @@ next2:
 	uwsgi_notify_ready();
 	uwsgi.current_time = uwsgi_now();
 
-    //Here we init_fake_req()
-    init_fake_req();
 	// here we spawn the workers...
 	if (!uwsgi.status.is_cheap) {
 		if (uwsgi.cheaper && uwsgi.cheaper_count) {

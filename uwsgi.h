@@ -1127,6 +1127,9 @@ struct uwsgi_app {
 	time_t startup_time;
 
 	uint64_t avg_response_time;
+    //Add for Python preload modules
+    //The struct schema: PyObject
+	void *preload_modules;
 };
 
 struct uwsgi_spooler {
@@ -2799,6 +2802,18 @@ struct uwsgi_server {
     int init_req_pipe[2];
 
     int subworker;
+    char * preload_modules_path;
+
+    int reinit_py;
+    void * preload_modules;
+    char * preload_modules_file;
+    struct stat pm_stat;
+    int pm_fd;
+    int track_import;
+
+
+    void * PIL_imaging;
+    void * PIL_imagingft;
 };
 
 struct uwsgi_rpc {

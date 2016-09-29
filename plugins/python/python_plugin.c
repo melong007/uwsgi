@@ -1,5 +1,8 @@
 #include "uwsgi_python.h"
 
+#include <string.h>
+#include <errno.h>
+
 /*
 
 	This is the official python plugin, the one with the modifier1 mapped to 0
@@ -16,6 +19,13 @@ struct uwsgi_python up;
 extern PyTypeObject uwsgi_InputType;
 
 void uwsgi_python_post_fork(); 
+void uwsgi_python_preinit_apps();
+void uwsgi_python_init_apps();
+void uwsgi_python_atexit();
+int init_fake_req();
+
+typedef void (*init_imaging)(void);
+
 
 void uwsgi_opt_pythonpath(char *opt, char *value, void *foobar) {
 
@@ -107,105 +117,327 @@ struct uwsgi_option uwsgi_python_options[] = {
 
 	{"import", required_argument, 0, "import a python module", uwsgi_opt_add_string_list, &up.import_list, 0},
 	{"pyimport", required_argument, 0, "import a python module", uwsgi_opt_add_string_list, &up.import_list, 0},
-	{"py-import", required_argument, 0, "import a python module", uwsgi_opt_add_string_list, &up.import_list, 0},
-	{"python-import", required_argument, 0, "import a python module", uwsgi_opt_add_string_list, &up.import_list, 0},
+    {"py-import", required_argument, 0, "import a python module", uwsgi_opt_add_string_list, &up.import_list, 0},
+    {"python-import", required_argument, 0, "import a python module", uwsgi_opt_add_string_list, &up.import_list, 0},
 
-	{"shared-import", required_argument, 0, "import a python module in all of the processes", uwsgi_opt_add_string_list, &up.shared_import_list, 0},
-	{"shared-pyimport", required_argument, 0, "import a python module in all of the processes", uwsgi_opt_add_string_list, &up.shared_import_list, 0},
-	{"shared-py-import", required_argument, 0, "import a python module in all of the processes", uwsgi_opt_add_string_list, &up.shared_import_list, 0},
-	{"shared-python-import", required_argument, 0, "import a python module in all of the processes", uwsgi_opt_add_string_list, &up.shared_import_list, 0},
+    {"shared-import", required_argument, 0, "import a python module in all of the processes", uwsgi_opt_add_string_list, &up.shared_import_list, 0},
+    {"shared-pyimport", required_argument, 0, "import a python module in all of the processes", uwsgi_opt_add_string_list, &up.shared_import_list, 0},
+    {"shared-py-import", required_argument, 0, "import a python module in all of the processes", uwsgi_opt_add_string_list, &up.shared_import_list, 0},
+    {"shared-python-import", required_argument, 0, "import a python module in all of the processes", uwsgi_opt_add_string_list, &up.shared_import_list, 0},
 
-	{"spooler-import", required_argument, 0, "import a python module in the spooler", uwsgi_opt_add_string_list, &up.spooler_import_list},
-	{"spooler-pyimport", required_argument, 0, "import a python module in the spooler", uwsgi_opt_add_string_list, &up.spooler_import_list},
-	{"spooler-py-import", required_argument, 0, "import a python module in the spooler", uwsgi_opt_add_string_list, &up.spooler_import_list},
-	{"spooler-python-import", required_argument, 0, "import a python module in the spooler", uwsgi_opt_add_string_list, &up.spooler_import_list},
+    {"spooler-import", required_argument, 0, "import a python module in the spooler", uwsgi_opt_add_string_list, &up.spooler_import_list},
+    {"spooler-pyimport", required_argument, 0, "import a python module in the spooler", uwsgi_opt_add_string_list, &up.spooler_import_list},
+    {"spooler-py-import", required_argument, 0, "import a python module in the spooler", uwsgi_opt_add_string_list, &up.spooler_import_list},
+    {"spooler-python-import", required_argument, 0, "import a python module in the spooler", uwsgi_opt_add_string_list, &up.spooler_import_list},
 
-	{"pyargv", required_argument, 0, "manually set sys.argv", uwsgi_opt_set_str, &up.argv, 0},
-	{"optimize", required_argument, 'O', "set python optimization level", uwsgi_opt_set_int, &up.optimize, 0},
-
-
-	{"pecan", required_argument, 0, "load a pecan config file", uwsgi_opt_set_str, &up.pecan, 0},
-
-	{"paste", required_argument, 0, "load a paste.deploy config file", uwsgi_opt_set_str, &up.paste, 0},
-	{"paste-logger", no_argument, 0, "enable paste fileConfig logger", uwsgi_opt_true, &up.paste_logger, 0},
+    {"pyargv", required_argument, 0, "manually set sys.argv", uwsgi_opt_set_str, &up.argv, 0},
+    {"optimize", required_argument, 'O', "set python optimization level", uwsgi_opt_set_int, &up.optimize, 0},
 
 
-	{"web3", required_argument, 0, "load a web3 app", uwsgi_opt_set_str, &up.web3, 0},
-	{"pump", required_argument, 0, "load a pump app", uwsgi_opt_set_str, &up.pump, 0},
-	{"wsgi-lite", required_argument, 0, "load a wsgi-lite app", uwsgi_opt_set_str, &up.wsgi_lite, 0},
-	{"ini-paste", required_argument, 0, "load a paste.deploy config file containing uwsgi section", uwsgi_opt_ini_paste, NULL, UWSGI_OPT_IMMEDIATE},
-	{"ini-paste-logged", required_argument, 0, "load a paste.deploy config file containing uwsgi section (load loggers too)", uwsgi_opt_ini_paste, NULL, UWSGI_OPT_IMMEDIATE},
-	{"reload-os-env", no_argument, 0, "force reload of os.environ at each request", uwsgi_opt_true, &up.reload_os_env, 0},
+    {"pecan", required_argument, 0, "load a pecan config file", uwsgi_opt_set_str, &up.pecan, 0},
+
+    {"paste", required_argument, 0, "load a paste.deploy config file", uwsgi_opt_set_str, &up.paste, 0},
+    {"paste-logger", no_argument, 0, "enable paste fileConfig logger", uwsgi_opt_true, &up.paste_logger, 0},
+
+
+    {"web3", required_argument, 0, "load a web3 app", uwsgi_opt_set_str, &up.web3, 0},
+    {"pump", required_argument, 0, "load a pump app", uwsgi_opt_set_str, &up.pump, 0},
+    {"wsgi-lite", required_argument, 0, "load a wsgi-lite app", uwsgi_opt_set_str, &up.wsgi_lite, 0},
+    {"ini-paste", required_argument, 0, "load a paste.deploy config file containing uwsgi section", uwsgi_opt_ini_paste, NULL, UWSGI_OPT_IMMEDIATE},
+    {"ini-paste-logged", required_argument, 0, "load a paste.deploy config file containing uwsgi section (load loggers too)", uwsgi_opt_ini_paste, NULL, UWSGI_OPT_IMMEDIATE},
+    {"reload-os-env", no_argument, 0, "force reload of os.environ at each request", uwsgi_opt_true, &up.reload_os_env, 0},
 #ifndef __CYGWIN__
-	{"no-site", no_argument, 0, "do not import site module", uwsgi_opt_true, &Py_NoSiteFlag, 0},
+    {"no-site", no_argument, 0, "do not import site module", uwsgi_opt_true, &Py_NoSiteFlag, 0},
 #endif
-	{"pyshell", optional_argument, 0, "run an interactive python shell in the uWSGI environment", uwsgi_opt_pyshell, NULL, 0},
-	{"pyshell-oneshot", optional_argument, 0, "run an interactive python shell in the uWSGI environment (one-shot variant)", uwsgi_opt_pyshell, NULL, 0},
+    {"pyshell", optional_argument, 0, "run an interactive python shell in the uWSGI environment", uwsgi_opt_pyshell, NULL, 0},
+    {"pyshell-oneshot", optional_argument, 0, "run an interactive python shell in the uWSGI environment (one-shot variant)", uwsgi_opt_pyshell, NULL, 0},
 
-	{"python", required_argument, 0, "run a python script in the uWSGI environment", uwsgi_opt_pyrun, NULL, 0},
-	{"py", required_argument, 0, "run a python script in the uWSGI environment", uwsgi_opt_pyrun, NULL, 0},
-	{"pyrun", required_argument, 0, "run a python script in the uWSGI environment", uwsgi_opt_pyrun, NULL, 0},
+    {"python", required_argument, 0, "run a python script in the uWSGI environment", uwsgi_opt_pyrun, NULL, 0},
+    {"py", required_argument, 0, "run a python script in the uWSGI environment", uwsgi_opt_pyrun, NULL, 0},
+    {"pyrun", required_argument, 0, "run a python script in the uWSGI environment", uwsgi_opt_pyrun, NULL, 0},
 
-	{"py-tracebacker", required_argument, 0, "enable the uWSGI python tracebacker", uwsgi_opt_set_str, &up.tracebacker, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
+    {"py-tracebacker", required_argument, 0, "enable the uWSGI python tracebacker", uwsgi_opt_set_str, &up.tracebacker, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
 
-	{"py-auto-reload", required_argument, 0, "monitor python modules mtime to trigger reload (use only in development)", uwsgi_opt_set_int, &up.auto_reload, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
-	{"py-autoreload", required_argument, 0, "monitor python modules mtime to trigger reload (use only in development)", uwsgi_opt_set_int, &up.auto_reload, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
-	{"python-auto-reload", required_argument, 0, "monitor python modules mtime to trigger reload (use only in development)", uwsgi_opt_set_int, &up.auto_reload, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
-	{"python-autoreload", required_argument, 0, "monitor python modules mtime to trigger reload (use only in development)", uwsgi_opt_set_int, &up.auto_reload, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
-	{"py-auto-reload-ignore", required_argument, 0, "ignore the specified module during auto-reload scan (can be specified multiple times)", uwsgi_opt_add_string_list, &up.auto_reload_ignore, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
+    {"py-auto-reload", required_argument, 0, "monitor python modules mtime to trigger reload (use only in development)", uwsgi_opt_set_int, &up.auto_reload, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
+    {"py-autoreload", required_argument, 0, "monitor python modules mtime to trigger reload (use only in development)", uwsgi_opt_set_int, &up.auto_reload, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
+    {"python-auto-reload", required_argument, 0, "monitor python modules mtime to trigger reload (use only in development)", uwsgi_opt_set_int, &up.auto_reload, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
+    {"python-autoreload", required_argument, 0, "monitor python modules mtime to trigger reload (use only in development)", uwsgi_opt_set_int, &up.auto_reload, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
+    {"py-auto-reload-ignore", required_argument, 0, "ignore the specified module during auto-reload scan (can be specified multiple times)", uwsgi_opt_add_string_list, &up.auto_reload_ignore, UWSGI_OPT_THREADS|UWSGI_OPT_MASTER},
 
-	{"wsgi-env-behaviour", required_argument, 0, "set the strategy for allocating/deallocating the WSGI env", uwsgi_opt_set_str, &up.wsgi_env_behaviour, 0},
-	{"wsgi-env-behavior", required_argument, 0, "set the strategy for allocating/deallocating the WSGI env", uwsgi_opt_set_str, &up.wsgi_env_behaviour, 0},
-	{"start_response-nodelay", no_argument, 0, "send WSGI http headers as soon as possible (PEP violation)", uwsgi_opt_true, &up.start_response_nodelay, 0},
+    {"wsgi-env-behaviour", required_argument, 0, "set the strategy for allocating/deallocating the WSGI env", uwsgi_opt_set_str, &up.wsgi_env_behaviour, 0},
+    {"wsgi-env-behavior", required_argument, 0, "set the strategy for allocating/deallocating the WSGI env", uwsgi_opt_set_str, &up.wsgi_env_behaviour, 0},
+    {"start_response-nodelay", no_argument, 0, "send WSGI http headers as soon as possible (PEP violation)", uwsgi_opt_true, &up.start_response_nodelay, 0},
 
-	{"wsgi-strict", no_argument, 0, "try to be fully PEP compliant disabling optimizations", uwsgi_opt_true, &up.wsgi_strict, 0},
-	{"wsgi-accept-buffer", no_argument, 0, "accept CPython buffer-compliant objects as WSGI response in addition to string/bytes", uwsgi_opt_true, &up.wsgi_accept_buffer, 0},
-	{"wsgi-accept-buffers", no_argument, 0, "accept CPython buffer-compliant objects as WSGI response in addition to string/bytes", uwsgi_opt_true, &up.wsgi_accept_buffer, 0},
+    {"wsgi-strict", no_argument, 0, "try to be fully PEP compliant disabling optimizations", uwsgi_opt_true, &up.wsgi_strict, 0},
+    {"wsgi-accept-buffer", no_argument, 0, "accept CPython buffer-compliant objects as WSGI response in addition to string/bytes", uwsgi_opt_true, &up.wsgi_accept_buffer, 0},
+    {"wsgi-accept-buffers", no_argument, 0, "accept CPython buffer-compliant objects as WSGI response in addition to string/bytes", uwsgi_opt_true, &up.wsgi_accept_buffer, 0},
 
-	{"python-version", no_argument, 0, "report python version", uwsgi_opt_pyver, NULL, UWSGI_OPT_IMMEDIATE},
+    {"python-version", no_argument, 0, "report python version", uwsgi_opt_pyver, NULL, UWSGI_OPT_IMMEDIATE},
 
-	{"python-raw", required_argument, 0, "load a python file for managing raw requests", uwsgi_opt_set_str, &up.raw, 0},
+    {"python-raw", required_argument, 0, "load a python file for managing raw requests", uwsgi_opt_set_str, &up.raw, 0},
 
 #if defined(PYTHREE) || defined(Py_TPFLAGS_HAVE_NEWBUFFER)
-	{"py-sharedarea", required_argument, 0, "create a sharedarea from a python bytearray object of the specified size", uwsgi_opt_add_string_list, &up.sharedarea, 0},
+    {"py-sharedarea", required_argument, 0, "create a sharedarea from a python bytearray object of the specified size", uwsgi_opt_add_string_list, &up.sharedarea, 0},
 #endif
 
-	{"py-call-osafterfork", no_argument, 0, "enable child processes running cpython to trap OS signals", uwsgi_opt_true, &up.call_osafterfork, 0},
+    {"py-call-osafterfork", no_argument, 0, "enable child processes running cpython to trap OS signals", uwsgi_opt_true, &up.call_osafterfork, 0},
 
-	{0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0},
 };
 
 /* this routine will be called after each fork to reinitialize the various locks */
 void uwsgi_python_pthread_prepare(void) {
-	pthread_mutex_lock(&up.lock_pyloaders);
+    pthread_mutex_lock(&up.lock_pyloaders);
 }
 
 void uwsgi_python_pthread_parent(void) {
-	pthread_mutex_unlock(&up.lock_pyloaders);
+    pthread_mutex_unlock(&up.lock_pyloaders);
 }
 
 void uwsgi_python_pthread_child(void) {
-	pthread_mutex_init(&up.lock_pyloaders, NULL);
+    pthread_mutex_init(&up.lock_pyloaders, NULL);
 }
 
 PyMethodDef uwsgi_spit_method[] = { {"uwsgi_spit", py_uwsgi_spit, METH_VARARGS, ""} };
 PyMethodDef uwsgi_write_method[] = { {"uwsgi_write", py_uwsgi_write, METH_VARARGS, ""} };
 
+
+void uwsgi_setup_xworkers() {
+	int i, j;
+	// allocate shared memory for workers + master
+	uwsgi.workers = (struct uwsgi_worker *) uwsgi_calloc_shared(sizeof(struct uwsgi_worker) * (uwsgi.numproc + 1));
+    uwsgi.last_timestamp_reload =  (time_t *) uwsgi_calloc_shared(sizeof(time_t));
+    *uwsgi.last_timestamp_reload = uwsgi_now();
+
+	for (i = 0; i <= uwsgi.numproc; i++) {
+		// allocate memory for apps
+		uwsgi.workers[i].apps = (struct uwsgi_app *) uwsgi_calloc_shared(sizeof(struct uwsgi_app) * uwsgi.max_apps);
+
+		// allocate memory for cores
+		uwsgi.workers[i].cores = (struct uwsgi_core *) uwsgi_calloc_shared(sizeof(struct uwsgi_core) * uwsgi.cores);
+
+		// this is a trick for avoiding too much memory areas
+		void *ts = uwsgi_calloc_shared(sizeof(void *) * uwsgi.max_apps * uwsgi.cores);
+		// add 4 bytes for uwsgi header
+		void *buffers = uwsgi_malloc_shared((uwsgi.buffer_size+4) * uwsgi.cores);
+		void *hvec = uwsgi_malloc_shared(sizeof(struct iovec) * uwsgi.vec_size * uwsgi.cores);
+		void *post_buf = NULL;
+		if (uwsgi.post_buffering > 0)
+			post_buf = uwsgi_malloc_shared(uwsgi.post_buffering* uwsgi.cores);
+
+
+		for (j = 0; j < uwsgi.cores; j++) {
+			// allocate shared memory for thread states (required for some language, like python)
+			uwsgi.workers[i].cores[j].ts = ts + ((sizeof(void *) * uwsgi.max_apps) * j);
+			// raw per-request buffer (+4 bytes for uwsgi header)
+			uwsgi.workers[i].cores[j].buffer = buffers + ((uwsgi.buffer_size+4) * j);
+			// iovec for uwsgi vars
+			uwsgi.workers[i].cores[j].hvec = hvec + ((sizeof(struct iovec) * uwsgi.vec_size) * j);
+			if (post_buf)
+				uwsgi.workers[i].cores[j].post_buf = post_buf + (uwsgi.post_buffering_bufsize * j);
+		}
+
+		// master does not need to following steps...
+		if (i == 0)
+			continue;
+		uwsgi.workers[i].signal_pipe[0] = -1;
+		uwsgi.workers[i].signal_pipe[1] = -1;
+		snprintf(uwsgi.workers[i].name, 0xff, "uWSGI worker %d", i);
+	}
+
+	uint64_t total_memory = (sizeof(struct uwsgi_app) * uwsgi.max_apps) + (sizeof(struct uwsgi_core) * uwsgi.cores) + (sizeof(void *) * uwsgi.max_apps * uwsgi.cores) + (uwsgi.buffer_size * uwsgi.cores) + (sizeof(struct iovec) * uwsgi.vec_size * uwsgi.cores);
+	if (uwsgi.post_buffering > 0) {
+		total_memory += (uwsgi.post_buffering_bufsize * uwsgi.cores);
+	}
+
+	total_memory *= (uwsgi.numproc + uwsgi.master_process);
+	if (uwsgi.numproc > 0)
+		uwsgi_log("mapped %llu bytes (%llu KB) for %d cores\n", (unsigned long long) total_memory, (unsigned long long) (total_memory / 1024), uwsgi.cores * uwsgi.numproc);
+
+	// allocate signal table
+        uwsgi.shared->signal_table = uwsgi_calloc_shared(sizeof(struct uwsgi_signal_entry) * 256 * (uwsgi.numproc + 1));
+
+#ifdef UWSGI_ROUTING
+	uwsgi_fixup_routes(uwsgi.routes);
+	uwsgi_fixup_routes(uwsgi.error_routes);
+	uwsgi_fixup_routes(uwsgi.response_routes);
+	uwsgi_fixup_routes(uwsgi.final_routes);
+#endif
+
+}
+
+void wsgi_req_xsetup(struct wsgi_request *wsgi_req, int async_id, struct uwsgi_socket *uwsgi_sock) {
+
+	wsgi_req->app_id = -1;
+
+	wsgi_req->async_id = async_id;
+	wsgi_req->sendfile_fd = -1;
+
+	wsgi_req->hvec = uwsgi_malloc(sizeof(struct iovec) * uwsgi.vec_size);
+	// skip the first 4 bytes;
+    void *buffer = uwsgi_malloc(uwsgi.buffer_size+4);
+	wsgi_req->uh = (struct uwsgi_header *) buffer;
+	wsgi_req->buffer =  buffer + 4;
+
+	if (uwsgi.post_buffering > 0) {
+		wsgi_req->post_buffering_buf = uwsgi_malloc(uwsgi.post_buffering_bufsize);
+	}
+
+	if (uwsgi_sock) {
+		wsgi_req->socket = uwsgi_sock;
+	}
+
+	//uwsgi.workers[uwsgi.mywid].cores[wsgi_req->async_id].in_request = 0;
+}
+
+
+int init_fake_req() {
+	long core_id = 0 ;
+    struct uwsgi_socket *uwsgi_sock;
+
+	if (uwsgi.lazy || uwsgi.lazy_apps) {
+        return -1;
+    }
+
+	//struct wsgi_request *wsgi_req = &uwsgi.workers[uwsgi.mywid].cores[core_id].req;
+	struct wsgi_request xwsgi_req;
+    struct wsgi_request *wsgi_req = &xwsgi_req;
+
+    memset(wsgi_req, 0, sizeof(struct wsgi_request));
+
+    //Set this request as faked
+    wsgi_req->fake_req = 1;
+
+
+    wsgi_req_setup(wsgi_req, core_id, NULL);
+    uwsgi.wsgi_req = wsgi_req;
+
+    //Without need to do accept, just need set the pipe read fd;??
+    wsgi_req->fd = uwsgi.init_req_pipe[0];
+    uwsgi_sock = uwsgi.sockets;
+    while (uwsgi_sock != NULL) {
+        if (strncmp(uwsgi_sock->proto_name, "http", 4) == 0) {
+            break;
+        }
+    }
+    if (uwsgi_sock == NULL) {
+        uwsgi_error("Haven't find http-socket, init_fake_req failed \n");
+        return -1;
+    }
+
+	wsgi_req->socket = uwsgi_sock;
+    int ret = wsgi_req->socket->proto(wsgi_req);
+    if (ret != UWSGI_OK) {
+        uwsgi_error("uwsgi_proto_http_parser() error, init_fake_req failed \n");
+        return -1;
+    }
+
+    printf("init_fake_req() call python vm to run the fake request\n");
+	wsgi_req->async_status = uwsgi.p[wsgi_req->uh->modifier1]->request(wsgi_req);
+
+    char buf[40960];
+    memset(buf, 0, 40960);
+    int read_fd = uwsgi.init_req_pipe[1];
+    if (read(read_fd, buf, 40960) > 0) {
+        //printf("the fake request response: %s\n", buf);
+        ;
+    } else if (read(uwsgi.init_req_pipe[0], buf, 40960) > 0) {
+        //printf("the fake request response: %s\n", buf);
+        ;
+    }
+    uwsgi_close_request(wsgi_req);
+
+    //python_plugin
+    struct uwsgi_plugin* pp = NULL;
+    int i = 0;
+    for (i = 0; i < 256; i++) {
+        pp = uwsgi.p[i];
+        if (pp->init && strncmp(pp->name, "python", 6) == 0) {
+            break;
+        }
+    }
+    return 1;
+}
+
+int uwsgi_check_preload_modules_exists() {
+    static char *default_path = "/opt/tiger/toutiao/runtime/uwsgi/";
+    char *p;
+    char *config_file_name = uwsgi.magic_table['o'];
+    int fname_len = 0;
+    if (config_file_name == NULL) {
+        //toutiao uwsgi startup with "-x uwsgi_stream_cache.xml"
+        return -1;
+    }
+    fname_len = strlen(config_file_name);
+
+    int fpath_len = 0;
+    int need_add_slash = 0;
+    if (uwsgi.preload_modules_path == NULL) {
+        fpath_len = strlen(default_path);
+        uwsgi.preload_modules_path = default_path;
+    } else {
+        fpath_len = strlen(uwsgi.preload_modules_path);
+        if (uwsgi.preload_modules_path[fname_len - 1] != '/') {
+            fpath_len += 1;
+            need_add_slash = 1;
+        }
+    }
+
+    uwsgi.preload_modules_file = uwsgi_malloc(fpath_len + fname_len + 4);
+    memset(uwsgi.preload_modules_file, 0, fpath_len + fname_len + 4);
+
+    p = uwsgi.preload_modules_file;
+    memcpy(p, uwsgi.preload_modules_path, fpath_len);
+    if (need_add_slash) {
+        p[fpath_len - 1] = '/';
+    }
+    memcpy(p+fpath_len, config_file_name, fname_len);
+
+    memset(&uwsgi.pm_stat, 0, sizeof(struct stat));
+    struct stat buf;
+    if (stat(uwsgi.preload_modules_path, &buf) == -1) {
+        if (errno == ENOENT) {
+            if (mkdir(uwsgi.preload_modules_path, 0777) == -1) {
+                uwsgi_log("Create the preload_modules_path:%s failed: %s\n",
+                        uwsgi.preload_modules_path, strerror(errno));
+                return -1;
+            }
+        }
+    }
+
+    if (stat(uwsgi.preload_modules_file, &uwsgi.pm_stat) == -1) {
+        if (errno == ENOENT) {
+            uwsgi.track_import = 1;
+        } else {
+            uwsgi_log("stat uwsgi.preload_modules_file(%s) failed: %s\n",
+                            uwsgi.preload_modules_file, strerror(errno));
+            return -1;
+        }
+    }
+
+    if ((uwsgi.pm_fd = open(uwsgi.preload_modules_file, O_CREAT|O_RDWR, 0777) ) == -1) {
+        uwsgi_log("Open the uwsgi.preload_modules_file(%s) failed: %s\n",
+                uwsgi.preload_modules_file, strerror(errno));
+        return -1;
+    }
+    return 1;
+}
+
 int uwsgi_python_init() {
 
-	char *pyversion = strchr(Py_GetVersion(), '\n');
-	if (!pyversion) {
-        	uwsgi_log_initial("Python version: %s\n", Py_GetVersion());
-	}
-	else {
-        	uwsgi_log_initial("Python version: %.*s %s\n", pyversion-Py_GetVersion(), Py_GetVersion(), Py_GetCompiler()+1);
-	}
+    char *pyversion = strchr(Py_GetVersion(), '\n');
+    if (!pyversion) {
+        uwsgi_log_initial("Python version: %s\n", Py_GetVersion());
+    }
+    else {
+        uwsgi_log_initial("Python version: %.*s %s\n", pyversion-Py_GetVersion(), Py_GetVersion(), Py_GetCompiler()+1);
+    }
 
-	if (Py_IsInitialized()) {
-		uwsgi_log("--- Python VM already initialized ---\n");
-		PyGILState_Ensure();
-		goto ready;
-	}
+    if (Py_IsInitialized()) {
+        uwsgi_log("--- Python VM already initialized ---\n");
+        PyGILState_Ensure();
+        goto ready;
+    }
 
 	if (up.home != NULL) {
 #ifdef PYTHREE
@@ -292,6 +524,42 @@ ready:
 #endif
 
 	uwsgi_log_initial("Python main interpreter initialized at %p\n", up.main_thread);
+    //For init_fake_req()
+    //
+
+    if (uwsgi_check_preload_modules_exists() == 1 && uwsgi.track_import == 1) {
+        //TODO: Fix memory leak? Need alloc many structs,
+        uwsgi_setup_xworkers();
+        uwsgi.wsgi_req = &uwsgi.workers[0].cores[0].req;
+
+        uwsgi_python_preinit_apps();
+        uwsgi_python_init_apps();
+        uwsgi.current_wsgi_req = simple_current_wsgi_req;
+
+        uwsgi_python_post_fork();
+        init_fake_req();
+
+        uwsgi_python_atexit();
+        if (uwsgi.preload_modules == NULL) {
+            uwsgi_log("get_preload_modules failed, still null\n");
+        } else {
+            ;
+            //PyObject * item = uwsgi.preload_modules;
+        }
+        //Fake request to get the Import Module list;
+        exit(0);
+
+        /*
+           PIL_imagingft_dlhandler = dlopen("/data00/tiger/ss_lib/python_package/lib/python2.7/site-packages/PIL/_imagingft.so", RTLD_LAZY);
+           if (PIL_imagingft_dlhandler == NULL) {
+           uwsgi_log("open PIL_imagingft_dlhandler failed\n");
+           }
+           uwsgi_log("open PIL_imagingft_dlhandler success: %p\n", PIL_imagingft_dlhandler);
+           dlclose(PIL_imagingft_dlhandler);
+           dlclose(PIL_imagingft_dlhandler);
+        */
+
+    }
 	return 1;
 }
 
@@ -1214,11 +1482,82 @@ next:
 			Py_INCREF(up.after_req_hook_args);
 		}
 	}
+    int n = 0;
+    int buf_size = 40960;
+    char buf[buf_size];
+    char *start, *end, *p;
+    memset(buf, 0, buf_size);
+    PyObject *item, *val;
+
+    item = PyImport_ImportModule("os");
+    val = PyObject_GetAttrString(item, "environ");
+    char * envs = PyString_AsString(val);
+    uwsgi_log("the os.environ: %s\n", envs);
+
+    item = PyImport_ImportModule("sys");
+    val = PyObject_GetAttrString(item, "path");
+    envs = PyString_AsString(val);
+    uwsgi_log("the sys.path: %s\n", envs);
+
+    int imported = 0;
+    int left = 0;
+    int dfd = open("/opt/tiger/toutiao/runtime/uwsgi/test.xml", O_CREAT|O_RDWR, 0777);
+    if (dfd <= 0) {
+        uwsgi_log("debug fd open failed: %s\n", strerror(errno));
+        goto finished;
+    }
+    if (uwsgi.pm_fd > 0) {
+        n = read(uwsgi.pm_fd, buf, buf_size);
+        if (n <= 0) {
+            uwsgi_log("read content from pm_fd failed: %s\n", strerror(errno));
+        } else {
+            end = buf + n;
+            p = buf;
+            start = p;
+            while(p < end) {
+                if (*p == '\n'){
+                    //Get a item;
+                    *p = 0;
+                    //uwsgi_log("got a module: %s\n", start);
+                    write(dfd, start, strlen(start));
+                    write(dfd, "\n", 1);
+                    item = PyImport_ImportModule(start);
+                    if (item != NULL) {
+                        imported++;
+                    }
+                    //uwsgi_log("import a module: %p\n", item);
+                    if (strcmp("pkg_resources._vendor.datetime", start) == 0) {
+                        uwsgi_log("got the break point:\n");
+                    }
+                    start = p + 1;
+                }
+                p++;
+                if (start < end && p == end) {
+                    //copy the left data
+                    left = end - start;
+                    memset(buf, 0, start - buf);
+                    memcpy(buf, start, left);
+                    n = read(uwsgi.pm_fd, buf + left, buf_size - left);
+                    if (n <= 0) {
+                        uwsgi_log("read content from pm_fd failed: %s\n", strerror(errno));
+                        goto finished;
+                    }
+                    end = buf + left + n;
+                    p = buf;
+                    start = buf;
+                }
+            }
+        }
+    }
+    fsync(dfd);
+    uwsgi_log("######import a module's count: %d\n", imported);
+
 	// lazy ?
+finished:
 	if (uwsgi.mywid > 0) {
 		UWSGI_RELEASE_GIL;
 	}
-
+    close(dfd);
 }
 
 void uwsgi_python_master_fixup(int step) {
