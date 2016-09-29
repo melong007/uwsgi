@@ -1501,10 +1501,13 @@ next:
 
     int imported = 0;
     int left = 0;
-    int dfd = open("/opt/tiger/toutiao/runtime/uwsgi/test.xml", O_CREAT|O_RDWR, 0777);
-    if (dfd <= 0) {
-        uwsgi_log("debug fd open failed: %s\n", strerror(errno));
-        goto finished;
+    int dfd = -1;
+    if (uwsgi.debug_preload_modules == 1) {
+        dfd = open("/opt/tiger/toutiao/runtime/uwsgi/test.xml", O_CREAT|O_RDWR, 0777);
+        if (dfd <= 0) {
+            uwsgi_log("debug fd open failed: %s\n", strerror(errno));
+            goto finished;
+        }
     }
     if (uwsgi.pm_fd > 0) {
         n = read(uwsgi.pm_fd, buf, buf_size);
@@ -1519,8 +1522,10 @@ next:
                     //Get a item;
                     *p = 0;
                     //uwsgi_log("got a module: %s\n", start);
-                    write(dfd, start, strlen(start));
-                    write(dfd, "\n", 1);
+                    if (dfd > 0) {
+                        write(dfd, start, strlen(start));
+                        write(dfd, "\n", 1);
+                    }
                     item = PyImport_ImportModule(start);
                     if (item != NULL) {
                         imported++;
@@ -1549,7 +1554,9 @@ next:
             }
         }
     }
-    fsync(dfd);
+    if (dfd > 0) {
+        fsync(dfd);
+    }
     uwsgi_log("######import a module's count: %d\n", imported);
 
 	// lazy ?
@@ -1557,7 +1564,9 @@ finished:
 	if (uwsgi.mywid > 0) {
 		UWSGI_RELEASE_GIL;
 	}
-    close(dfd);
+    if (dfd > 0) {
+        close(dfd);
+    }
 }
 
 void uwsgi_python_master_fixup(int step) {

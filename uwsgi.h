@@ -2811,9 +2811,13 @@ struct uwsgi_server {
     int pm_fd;
     int track_import;
 
+    char * preload_host;
+    char * preload_uri;
 
     void * PIL_imaging;
     void * PIL_imagingft;
+
+    int debug_preload_modules;
 };
 
 struct uwsgi_rpc {

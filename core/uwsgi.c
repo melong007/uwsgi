@@ -1003,6 +1003,9 @@ static struct uwsgi_option uwsgi_base_options[] = {
 	{"nsq-proxy-ip", required_argument, 0, "config the nsqd http proxy addr", uwsgi_opt_add_string_list, &uwsgi.nsqd_proxy_ips, 0},
 	{"nsq-proxy-port", required_argument, 0, "config the nsqd http proxy addr", uwsgi_opt_set_64bit, &uwsgi.nsqd_proxy_port, 0},
 	{"nsq-topic", required_argument, 0, "nsq topic name", uwsgi_opt_set_str, &uwsgi.nsq_topic, 0},
+	{"preload-uri", required_argument, 0, "uri use to fake req init uwsgi", uwsgi_opt_set_str, &uwsgi.preload_uri, 0},
+	{"preload-host", required_argument, 0, "host use to fake req init uwsgi", uwsgi_opt_set_str, &uwsgi.preload_host, 0},
+	{"debug-preload-modules", required_argument, 0, "host use to fake req init uwsgi", uwsgi_opt_true, &uwsgi.debug_preload_modules, 0},
 
 	{"inter-error-reload", required_argument, 0, "config the uwsgi worker restart after how many(default is disabled) continues 500 resp", uwsgi_opt_set_64bit, &uwsgi.inter_error_reload, 0},
 	{"timer-resolution", required_argument, 0, "config the uwsgi worker default timeout for epoll_wait", uwsgi_opt_set_64bit, &uwsgi.timer_resolution, 0},
@@ -2022,10 +2025,47 @@ int create_init_req_pipe() {
 		uwsgi_error("create_init_req_pipe()/socketpair() failed \n");
 		return -1;
 	}
+    char buf[40960];
+    memset(buf, 0, 40960);
 	uwsgi_socket_nb(uwsgi.init_req_pipe[0]);
 	uwsgi_socket_nb(uwsgi.init_req_pipe[1]);
-    char msg[] = "GET /api/2/article/v20/stream/?category=news_society&count=20&min_behot_time=1436962307&loc_mode=5&loc_time=1436961223&latitude=26.044166666666666&longitude=119.32361111111112&city=%E7%A6%8F%E5%B7%9E&lac=1001&cid=11731&iid=2744457812&device_id=2775695862&ac=mobile&channel=baidu&aid=13&app_name=news_article&version_code=410&device_platform=android&device_type=HUAWEI%20C8817E&os_api=19&os_version=4.4.4&uuid=A000004F644477&openudid=b0f4a5fa761cc38b HTTP/1.1\r\nUser-Agent: curl/7.38.0\r\nHost: ic.snssdk.com\r\n\r\n";
-    if (write(uwsgi.init_req_pipe[1], msg, sizeof(msg)) != sizeof (msg)) {
+    char *prefix = "GET ";
+    char *default_url = "/api/2/article/v20/stream/?category=news_society&count=20&min_behot_time=1436962307&loc_mode=5&loc_time=1436961223&latitude=26.044166666666666&longitude=119.32361111111112&city=%E7%A6%8F%E5%B7%9E&lac=1001&cid=11731&iid=2744457812&device_id=24575695862&ac=mobile&channel=baidu&aid=13&app_name=news_article&version_code=410&device_platform=android&device_type=HUAWEI%20C8817E&os_api=19&os_version=4.4.4&uuid=A000004F64477&openudid=b0f4a5fa761cc38b";
+    char *suffix = " HTTP/1.1\r\nUser-Agent: curl/7.38.0\r\n";
+    char *host_prefix = "Host: ";
+    char *default_host = "ic.snssdk.com";
+    char *end_str = "\r\n\r\n";
+
+    char *p = buf;
+    memcpy(p, prefix, strlen(prefix));
+    p += strlen(prefix);
+
+    if (uwsgi.preload_uri) {
+        memcpy(p, uwsgi.preload_uri, strlen(uwsgi.preload_uri));
+        p += strlen(uwsgi.preload_uri);
+    } else {
+        memcpy(p, default_url, strlen(default_url));
+        p += strlen(default_url);
+    }
+
+    memcpy(p, suffix, strlen(suffix));
+    p += strlen(suffix);
+
+    memcpy(p, host_prefix, strlen(host_prefix));
+    p += strlen(host_prefix);
+
+    if (uwsgi.preload_host != NULL) {
+        memcpy(p, uwsgi.preload_host, strlen(uwsgi.preload_host));
+        p += strlen(uwsgi.preload_host);
+    } else {
+        memcpy(p, default_host, strlen(default_host));
+        p += strlen(default_host);
+    }
+
+    memcpy(p, end_str, strlen(end_str));
+    p += strlen(end_str);
+
+    if (write(uwsgi.init_req_pipe[1], buf, strlen(buf)) != (ssize_t)strlen(buf)) {
 		close(uwsgi.init_req_pipe[0]);
 		close(uwsgi.init_req_pipe[1]);
 		uwsgi_error("create_init_req_pipe()/write() init_req_pipe[1] failed \n");
