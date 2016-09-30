@@ -1509,6 +1509,8 @@ next:
             goto finished;
         }
     }
+    char *black_list[] = {"neihan", "neihan.data.common"};
+    int j = 0;
     if (uwsgi.pm_fd > 0) {
         n = read(uwsgi.pm_fd, buf, buf_size);
         if (n <= 0) {
@@ -1525,6 +1527,19 @@ next:
                     if (dfd > 0) {
                         write(dfd, start, strlen(start));
                         write(dfd, "\n", 1);
+                    }
+                    int need_skip = 0;
+                    for (j=0; j < 2; j++) {
+                        if (strlen(start) == strlen(black_list[j]) && strncmp(start, black_list[j], strlen(start)) == 0) {
+                            uwsgi_log("current module: %s\n", start);
+                            uwsgi_log("skip the module: %s\n", black_list[j]);
+                            need_skip = 1;
+                            break;
+                        }
+                    }
+                    if (need_skip == 1) {
+                        start = p + 1;
+                        continue;
                     }
                     item = PyImport_ImportModule(start);
                     if (item != NULL) {
