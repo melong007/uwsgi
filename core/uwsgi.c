@@ -1362,19 +1362,16 @@ void grace_them_all(int signum) {
 
 	int i;
 
-	if (uwsgi.lazy) {
-		//Fix lazy mode grace reload can't restart spooler
-		uwsgi_signal_spoolers(SIGKILL);
-		for (i = 1; i <= uwsgi.numproc; i++) {
-			if (uwsgi.workers[i].pid > 0) {
-				//uwsgi_curse(i, SIGHUP);
-				uwsgi_notify_worker_reload(i);
-			}
-		}
-		return;
-	}
-	
+    //Fix lazy mode grace reload can't restart spooler
+    uwsgi_signal_spoolers(SIGKILL);
+    for (i = 1; i <= uwsgi.numproc; i++) {
+        if (uwsgi.workers[i].pid > 0) {
+            //uwsgi_curse(i, SIGHUP);
+            uwsgi_notify_worker_reload(i);
+        }
+    }
 
+ /*
 	uwsgi.status.gracefully_reloading = 1;
 
 	uwsgi_destroy_processes();
@@ -1400,6 +1397,7 @@ void grace_them_all(int signum) {
 			uwsgi_curse_mule(i, SIGHUP);
 		}
 	}
+*/
 }
 
 void uwsgi_nuclear_blast() {
