@@ -1260,6 +1260,40 @@ void uwsgi_python_spooler_init(void) {
 
 
 	UWSGI_GET_GIL
+    /*
+    struct uwsgi_string_list *item = NULL;
+    for (item = uwsgi.modules; item != NULL; item = item->next) {
+        if (item->custom_ptr != NULL && strstr(item->value, "uwsgi_util") != NULL)  {
+            uwsgi_log("Need reload all uwsgi_util related preload modules:%s\n", item->value);
+            PyImport_ReloadModule(item->custom_ptr);
+        }
+    }*/
+
+    int i = 0;
+    PyObject* modules = PyImport_GetModuleDict();
+    if (PyDict_Check(modules)){
+        //uwsgi_log("Got modules dict\n");
+        PyObject* keys = PyDict_Keys(modules);
+        if (PyList_Check(keys)) {
+            int len = PyList_Size(keys);
+            uwsgi_log("the modules keys, len: %d\n", len);
+            if (len > 0) {
+                for (i= 0; i < len; i++) {
+                    PyObject * mname = PyList_GetItem(keys, i);
+                    if (PyString_Check(mname)) {
+                        char *s = PyString_AsString(mname);
+                        if (strstr(s, "uwsgi_util") != NULL) {
+                            uwsgi_log("delete all uwsgi_util related preload modules:%s\n", s);
+                            //PyObject * mod = PyDict_GetItem(modules, mname);
+                            PyDict_DelItem(modules, mname);
+                            //PyImport_ReloadModule(mod);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
         while(upli) {
                 if (strchr(upli->value, '/') || uwsgi_endswith(upli->value, ".py")) {
                         uwsgi_pyimport_by_filename(uwsgi_pythonize(upli->value), upli->value);
