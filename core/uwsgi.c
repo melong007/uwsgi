@@ -3335,6 +3335,19 @@ next2:
 	uwsgi_notify_ready();
 	uwsgi.current_time = uwsgi_now();
 
+	// pre_real_fork (call something intilize befor real_fork)
+	for (i = 0; i < 256; i++) {
+		if (uwsgi.p[i]->pre_real_fork) {
+			uwsgi.p[i]->pre_real_fork();
+		}
+	}
+
+	for (i = 0; i < uwsgi.gp_cnt; i++) {
+		if (uwsgi.gp[i]->pre_real_fork) {
+			uwsgi.gp[i]->pre_real_fork();
+		}
+	}
+
 	// here we spawn the workers...
 	if (!uwsgi.status.is_cheap) {
 		if (uwsgi.cheaper && uwsgi.cheaper_count) {

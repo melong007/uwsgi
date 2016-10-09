@@ -368,7 +368,21 @@ int uwsgi_check_preload_modules_exists() {
         //toutiao uwsgi startup with "-x uwsgi_stream_cache.xml"
         return -1;
     }
+    //   /abcd/a.txt
     fname_len = strlen(config_file_name);
+
+    //Got the really fname
+    int i = 0;
+    for(i = fname_len-1; i >= 0 ; i--){
+        if(config_file_name[i] == '/') {
+            break;
+        }
+    }
+
+    if (i >= 0 ) {
+        config_file_name = config_file_name + i + 1;
+        fname_len = fname_len -i - 1;
+    }
 
     int fpath_len = 0;
     int need_add_slash = 0;
@@ -1244,8 +1258,8 @@ void uwsgi_python_spooler_init(void) {
 
 	struct uwsgi_string_list *upli = up.spooler_import_list;
 
-	UWSGI_GET_GIL
 
+	UWSGI_GET_GIL
         while(upli) {
                 if (strchr(upli->value, '/') || uwsgi_endswith(upli->value, ".py")) {
                         uwsgi_pyimport_by_filename(uwsgi_pythonize(upli->value), upli->value);
@@ -1482,6 +1496,15 @@ next:
 			Py_INCREF(up.after_req_hook_args);
 		}
 	}
+	// lazy ?
+	if (uwsgi.mywid > 0) {
+		UWSGI_RELEASE_GIL;
+	}
+}
+
+void uwsgi_python_pre_real_fork(void) {
+
+	UWSGI_GET_GIL;
     int n = 0;
     int buf_size = 40960;
     char buf[buf_size];
@@ -1509,7 +1532,12 @@ next:
             goto finished;
         }
     }
-    char *black_list[] = {"neihan", "neihan.data.common"};
+    char *black_list[] = {"neihan",
+                          "neihan.data.common",
+                          "ss_site.uwsgi_util.spool_func",
+                          "ss_site.uwsgi_util.uwsgi_lru_mc_cache",
+                          "ss_site.uwsgi_util.uwsgi_cache",
+                          "ss_site.uwsgi_util.decorator"};
     int j = 0;
     if (uwsgi.pm_fd > 0) {
         n = read(uwsgi.pm_fd, buf, buf_size);
@@ -1523,13 +1551,24 @@ next:
                 if (*p == '\n'){
                     //Get a item;
                     *p = 0;
+                    size_t slen = strlen(start);
+                    struct uwsgi_string_list *mod = uwsgi_calloc(sizeof(struct uwsgi_string_list));
+                    mod->value = uwsgi_calloc(slen + 1);
+                    mod->len = slen;
+                    memcpy(mod->value, start, slen);
+                    if (uwsgi.modules == NULL) {
+                        uwsgi.modules = mod;
+                    } else {
+                        uwsgi.last->next = mod;
+                    }
+                    uwsgi.last = mod;
                     //uwsgi_log("got a module: %s\n", start);
                     if (dfd > 0) {
                         write(dfd, start, strlen(start));
                         write(dfd, "\n", 1);
                     }
                     int need_skip = 0;
-                    for (j=0; j < 2; j++) {
+                    for (j=0; j < 6; j++) {
                         if (strlen(start) == strlen(black_list[j]) && strncmp(start, black_list[j], strlen(start)) == 0) {
                             uwsgi_log("current module: %s\n", start);
                             uwsgi_log("skip the module: %s\n", black_list[j]);
@@ -1544,6 +1583,7 @@ next:
                     item = PyImport_ImportModule(start);
                     if (item != NULL) {
                         imported++;
+                        mod->custom_ptr = item;
                     }
                     //uwsgi_log("import a module: %p\n", item);
                     if (strcmp("pkg_resources._vendor.datetime", start) == 0) {
@@ -1569,19 +1609,14 @@ next:
             }
         }
     }
+finished:
     if (dfd > 0) {
         fsync(dfd);
+        close(dfd);
     }
     uwsgi_log("######import a module's count: %d\n", imported);
 
-	// lazy ?
-finished:
-	if (uwsgi.mywid > 0) {
-		UWSGI_RELEASE_GIL;
-	}
-    if (dfd > 0) {
-        close(dfd);
-    }
+    UWSGI_RELEASE_GIL; 
 }
 
 void uwsgi_python_master_fixup(int step) {
@@ -2547,6 +2582,6 @@ struct uwsgi_plugin python_plugin = {
 	.exception_repr = uwsgi_python_exception_repr,
 	.exception_log = uwsgi_python_exception_log,
 	.backtrace = uwsgi_python_backtrace,
-
+    .pre_real_fork = uwsgi_python_pre_real_fork,
 
 };
