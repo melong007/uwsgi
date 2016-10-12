@@ -625,6 +625,17 @@ int master_loop(char **argv, char **environ) {
 			}
 		}
 
+        if (uwsgi.status.gracefully_reloading == 1) {
+            int i;
+            for (i = 1; i <= uwsgi.numproc; i++) {
+                if (uwsgi.workers[i].pid > 0) {
+                    //uwsgi_curse(i, SIGHUP);
+                    uwsgi_notify_worker_reload(i);
+                }
+            }
+            uwsgi.status.gracefully_reloading = 0;
+        }
+
 		// check for death (before reload !!!)
 		uwsgi_master_check_death();
 		// check for realod

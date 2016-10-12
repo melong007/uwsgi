@@ -130,6 +130,7 @@ void uwsgi_get_py_modules(struct wsgi_request *wsgi_req, struct uwsgi_app *wi) {
             uwsgi.PIL_imaging = PIL_imaging;
             PyObject *PIL_imagingft = PyDict_GetItemString(modules, "PIL._imagingft");
             uwsgi.PIL_imagingft = PIL_imagingft;
+            uwsgi_log("python PIL_imagingft module object: %p\n", PIL_imagingft);
 
             //uwsgi_log("Got modules dict\n");
             PyObject* keys = PyDict_Keys(modules);
@@ -137,28 +138,63 @@ void uwsgi_get_py_modules(struct wsgi_request *wsgi_req, struct uwsgi_app *wi) {
                 int len = PyList_Size(keys);
                 uwsgi_log("the modules keys, len: %d\n", len);
                 if (len > 0) {
-                    PyObject* modules = PyList_New(len);
+                    PyObject* dup_modules = PyList_New(len);
                     //int db_fd = open("/home/tiger/modules.txt", O_CREAT|O_RDWR, 0777);
                     //uwsgi_log("debug Create file success: %d\n", pm_fd);
                     int pm_fd = uwsgi.pm_fd;
+                    int mod_nil = 0;
+                    int mod_dict_nil = 0;
+                    int pyc_obj_nil = 0;
+                    int need_preload_count = 0;
                     for (i= 0; i < len; i++) {
                         PyObject * mname = PyList_GetItem(keys, i);
                         if (PyString_Check(mname)) {
-                            PyList_SET_ITEM(modules, i, mname);
+                            PyList_SET_ITEM(dup_modules, i, mname);
                             char *s = PyString_AsString(mname);
-                            //uwsgi_log("the module name: %s\n", s);
+                            PyObject *mod = PyDict_GetItemString(modules, s);
+                            if (mod == NULL) {
+                                //uwsgi_log("python modules: %s is null, skip it\n", s);
+                                mod_nil++;
+                                continue; 
+                            }
+
+                            PyObject *mod_dict = PyModule_GetDict(mod);
+                            if (mod_dict == NULL) {
+                                //uwsgi_log("python modules: %s Dict is null, skip it\n", s);
+                                mod_dict_nil++;
+                                continue;
+                            }
+
+                            PyObject *pyc_obj = PyDict_GetItemString(mod_dict, (char*)"__file__");
+                            if (pyc_obj == NULL || !PyString_Check(pyc_obj) ) {
+                                //uwsgi_log("the module: %s, doesn't found pyc file\n", s);
+                                pyc_obj_nil++;
+                                continue;
+                            }
+
+                            char *pyc_name = PyString_AsString(pyc_obj);
+                            //uwsgi_log("get a need preload module name: %s\n", s);
                             write(pm_fd, s, strlen(s));
+                            write(pm_fd, " ", 1);
+
+                            write(pm_fd, pyc_name, strlen(pyc_name));
                             //uwsgi_log("write fd ch count : %d\n", n);
                             write(pm_fd, "\n", 1);
                             //uwsgi_log("write fd ch count : %d\n", n);
+                            need_preload_count++;
                         } else {
                             uwsgi_log("got invalid module, index: %d\n", i);
                             continue;
                         }
                     }
+
+                    uwsgi_log("the mod_nil: %d\n", mod_nil);
+                    uwsgi_log("the mod_dict_nil: %d\n", mod_dict_nil);
+                    uwsgi_log("the pyc_obj_nil: %d\n", pyc_obj_nil);
+                    uwsgi_log("the need_preload_count: %d\n", need_preload_count);
                     fsync(pm_fd);
                     close(pm_fd);
-                    uwsgi.preload_modules = modules;
+                    uwsgi.preload_modules = dup_modules;
                 }
             } else {
                 uwsgi_log("Got modules failed\n");

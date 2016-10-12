@@ -1665,6 +1665,7 @@ struct uwsgi_instance_status {
 	int workers_reloading;
 	int is_cheap;
 	int is_cleaning;
+    int reload_modules;
 };
 
 struct uwsgi_configurator {
@@ -2818,6 +2819,8 @@ struct uwsgi_server {
 
     void * PIL_imaging;
     void * PIL_imagingft;
+
+    void * compile_func;
 
     struct uwsgi_string_list *modules;
     struct uwsgi_string_list *last;

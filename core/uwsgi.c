@@ -1360,16 +1360,21 @@ void grace_them_all(int signum) {
 	if (uwsgi_instance_is_reloading || uwsgi_instance_is_dying)
 		return;
 
-	int i;
 
     //Fix lazy mode grace reload can't restart spooler
     uwsgi_signal_spoolers(SIGKILL);
+	uwsgi.status.gracefully_reloading = 1;
+    uwsgi.status.reload_modules = 1;
+    /*
+	int i;
     for (i = 1; i <= uwsgi.numproc; i++) {
         if (uwsgi.workers[i].pid > 0) {
             //uwsgi_curse(i, SIGHUP);
             uwsgi_notify_worker_reload(i);
         }
     }
+    */
+
 
  /*
 	uwsgi.status.gracefully_reloading = 1;
