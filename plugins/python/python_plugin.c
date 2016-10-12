@@ -1600,7 +1600,13 @@ int uwsgi_python_compile_pyc_file(char * s, int len){
         py_file_name = s;
     } else {
         //Other type just return, doesn't do preload;
-        return 1; 
+        py_file_name = uwsgi_calloc(len + 4);     
+        memcpy(py_file_name, s, len);
+        memcpy(py_file_name + len, ".py", 3);
+
+        pyc_file_name = uwsgi_calloc(len + 5);
+        memcpy(pyc_file_name, s, len);
+        memcpy(pyc_file_name + len, ".pyc", 4);
     }
 
     int need_compile = 0;
@@ -1611,7 +1617,8 @@ int uwsgi_python_compile_pyc_file(char * s, int len){
 
     if (stat(py_file_name, &py_st) == -1) {
         uwsgi_log("stat python file: %s failed: %s\n", py_file_name, strerror(errno));
-        return 1;
+        //Not found;
+        return -1;
     }
 
     if (stat(pyc_file_name, &pyc_st) == -1) {
@@ -1621,11 +1628,12 @@ int uwsgi_python_compile_pyc_file(char * s, int len){
     }
 
     if (pyc_st.st_mtime < py_st.st_mtime) {
-        uwsgi_log("pyc file is fresh no need compile: %s\n", py_file_name);
+        uwsgi_log("pyc file is old need compile: %s\n", py_file_name);
         need_compile = 1; 
     }
 
     if (need_compile == 0) {
+        //Already exists;
         return 1;  
     }
 
@@ -1638,6 +1646,7 @@ int uwsgi_python_compile_pyc_file(char * s, int len){
     pResult=PyObject_CallObject(pFunc, pValue);
     uwsgi_log("we get the result: %p\n", pResult);
     PyErr_Print();
+    //New gen file;
     return 0;
 }
 
@@ -1684,7 +1693,7 @@ void uwsgi_python_pre_real_fork(void) {
     if (uwsgi.pm_fd > 0) {
         n = read(uwsgi.pm_fd, buf, buf_size);
         if (n <= 0) {
-            uwsgi_log("read content from pm_fd failed: %s\n", strerror(errno));
+            uwsgi_log("read content from pm_fd failed: %s, size: %d\n", strerror(errno), n);
         } else {
             end = buf + n;
             p = buf;
@@ -1715,17 +1724,22 @@ void uwsgi_python_pre_real_fork(void) {
                     }
                     //Need check pyc file has been exists
                     int ret = uwsgi_python_compile_pyc_file(pys, pycn_len);
-                    if (ret == 1) {
+                    //@return value:
+                    // -1 Not found;
+                    // 1  Already Updated;
+                    // 0  New gen file;
+                    if (ret == -1) {
                         //uwsgi_log("compile python: %s module failed\n", pys);
                         continue; 
-                    } else if (ret == -1) {
-                        uwsgi_log("compile module is failed\n", pys);
-                        break; 
-                    }
-
+                    } 
                     mod->value = uwsgi_calloc(slen + 1);
                     mod->len = slen;
                     memcpy(mod->value, start, slen);
+
+                    mod->custom = (uint64_t)uwsgi_calloc(pycn_len + 1);
+                    mod->custom2 = (uint64_t)pycn_len;
+                    memcpy((void *)mod->custom, pys, pycn_len);
+
                     if (uwsgi.modules == NULL) {
                         uwsgi.modules = mod;
                     } else {
@@ -1773,10 +1787,14 @@ void uwsgi_python_pre_real_fork(void) {
                     memset(buf, 0, start - buf);
                     memcpy(buf, start, left);
                     n = read(uwsgi.pm_fd, buf + left, buf_size - left);
-                    if (n <= 0) {
-                        uwsgi_log("read content from pm_fd failed: %s\n", strerror(errno));
+                    if (n < 0) {
+                        uwsgi_log("###### read content from pm_fd failed: %s\n", strerror(errno));
                         goto finished;
                     }
+
+                    if (n == 0) {
+                        break; 
+                    } 
                     end = buf + left + n;
                     p = buf;
                     start = buf;
@@ -1801,9 +1819,57 @@ void uwsgi_python_master_cycle(void) {
     }
 
 	UWSGI_GET_GIL;
-    int i = 0;
-    int len = 0;
-    PyObject* modules = PyImport_GetModuleDict();
+    //int i = 0;
+    int reload_cnt = 0;
+
+    struct uwsgi_string_list *mod = NULL;
+    char *pys = NULL;
+    int  pys_len = 0;
+
+    //char *mname = NULL;
+    //char *len
+    PyObject* cmodules = PyImport_GetModuleDict();
+    if (!PyDict_Check(cmodules)) {
+        //TODO: need alarm!!
+        return;
+    }
+
+    for (mod = uwsgi.modules; mod != NULL; mod = mod->next) {
+        pys = (char *)mod->custom;
+        pys_len = (int)mod->custom2;
+
+        //mname = (char *)mod->value;
+        //len = (char *)mod->len;
+
+        int ret = uwsgi_python_compile_pyc_file(pys, pys_len);
+        //Only care the New gen file?;
+        if (ret != 0) {
+            //uwsgi_log("compile python: %s module failed\n", pys);
+            continue; 
+        }
+
+        PyObject *objname = PyString_FromString(pys);
+        ret = PyDict_DelItem(cmodules, objname);
+        if (ret == -1) {
+		    PyErr_Print();
+            continue; 
+        }
+        PyObject *nobj = NULL;
+        nobj = PyImport_Import(objname);
+
+        /*
+        PyImport_ImportModule(s);
+
+        nobj = PyImport_ReloadModule((PyObject *)mod->custom_ptr);
+        */
+        if (nobj == NULL) {
+		    PyErr_Print();
+            continue;
+        }
+        reload_cnt++;
+    }
+
+    /*PyObject* modules = PyImport_GetModuleDict();
     if (PyDict_Check(modules)) {
         //uwsgi_log("Got modules dict\n");
         PyObject* keys = PyDict_Keys(modules);
@@ -1814,26 +1880,33 @@ void uwsgi_python_master_cycle(void) {
                 for (i= 0; i < len; i++) {
                     PyObject * mname = PyList_GetItem(keys, i);
                     if (PyString_Check(mname)) {
+                        char *s = PyString_AsString(mname);
                         PyObject * mod = PyDict_GetItem(modules, mname);
+                        int ret = uwsgi_python_compile_pyc_file(s, strlen(s));
+                        if (ret == 1) {
+                            //uwsgi_log("compile python: %s module failed\n", pys);
+                            continue; 
+                        } else if (ret == -1) {
+                            uwsgi_log("compile module is failed: %s\n", s);
+                            break; 
+                        }
                         PyImport_ReloadModule(mod);
-                        /*
+                        reload_cnt++;
                         if (strstr(s, "uwsgi_util") != NULL) {
                             uwsgi_log("delete all uwsgi_util related preload modules:%s\n", s);
                         }
-                        */
-                        /*
                         char *s = PyString_AsString(mname);
                         PyDict_DelItem(modules, mname);
                         PyImport_ImportModule(s);
-                        */
                     }
                 }
             }
         }
     }
+    */
 
     uwsgi.status.reload_modules = 0;
-    uwsgi_log("######reload module's count: %d\n", len);
+    uwsgi_log("######reload module's count: %d\n", reload_cnt);
 
     UWSGI_RELEASE_GIL;
 }
@@ -2803,6 +2876,6 @@ struct uwsgi_plugin python_plugin = {
 	.exception_log = uwsgi_python_exception_log,
 	.backtrace = uwsgi_python_backtrace,
     .pre_real_fork = uwsgi_python_pre_real_fork,
-    //.master_cycle = uwsgi_python_master_cycle,
+    .master_cycle = uwsgi_python_master_cycle,
 
 };
