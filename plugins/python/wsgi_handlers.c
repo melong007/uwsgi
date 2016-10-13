@@ -454,47 +454,6 @@ void uwsgi_after_request_wsgi(struct wsgi_request *wsgi_req) {
 		PyErr_Clear();
 		UWSGI_RELEASE_GIL
 	}
-    //Check the wsgi_req is 500 Internal Server Error?
-    if (wsgi_req->status == 500 && uwsgi.inter_error_reload > 0) {
-        uwsgi.inter_error++;
-
-        uwsgi_log_verbose("Worker[%d: %d] got Internal Server Error---\n", uwsgi.mywid, uwsgi.mypid);
-
-        //If we Got continues 500 response, will restart the worker
-        if (uwsgi.inter_error >= uwsgi.inter_error_reload
-                && uwsgi.last_timestamp_reload != NULL)
-        {
-		    time_t now = uwsgi_now();
-            int need_restart = 1;
-
-            //Try reuse the reload_interval, If Non-Set, set the interval to 1 sescond;
-            int interval = uwsgi.reload_interval > 0 ? uwsgi.reload_interval: 10;
-
-	        thunder_lock;
-            int duration = now - *(uwsgi.last_timestamp_reload);
-
-            //Try to disable this worker to serve next request;
-            if (duration >= interval) {
-                *(uwsgi.last_timestamp_reload) = now;
-                uwsgi.workers[uwsgi.mywid].manage_next_request = 0;
-                uwsgi.inter_error = 0;
-            } else {
-                need_restart = 0;
-            }
-	        thunder_unlock;
-            if (need_restart == 1) {
-                uwsgi_log_verbose("Worker[%d: %d] Need Restart, Meet the max Internal Server Error[%d: %d], lastReload[%d: %d] ---\n",
-                                   uwsgi.mywid, uwsgi.mypid, uwsgi.inter_error_reload, uwsgi.inter_error, interval, duration);
-            } else {
-                uwsgi_log_verbose("Worker[%d: %d] Need Restart, But need wait at least restart interval[%d: %d]---\n",
-                                   uwsgi.mywid, uwsgi.mypid, interval, duration);
-            }
-        }
-    } else if (wsgi_req->status == 200) {
-        //Reset the error count, we successfully serve a request;
-        //Just caculate the continues Internal Server Error---;
-        uwsgi.inter_error = 0;
-    }
 
 	log_request(wsgi_req);
 }

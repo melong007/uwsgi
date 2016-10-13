@@ -2789,42 +2789,6 @@ struct uwsgi_server {
     int current_proxy;
     struct hostent *localaddr;
     int localaddr_len;
-
-    // Support restart uwsgi worker after continues 500 response
-    int inter_error_reload;
-    int inter_error;
-    time_t *last_timestamp_reload;
-
-    // Support set default timeout for epoll_wait
-    int timer_resolution;
-
-    // Preload the code by fake a request through a PIPE
-    // @1. Create a pipe
-    // @2. Fake a http Request send to pipe
-    // @3. Parse the Http Request and Use the app engine to serve the request
-    int init_req_pipe[2];
-
-    int subworker;
-    char * preload_modules_path;
-
-    int reinit_py;
-    void * preload_modules;
-    char * preload_modules_file;
-    struct stat pm_stat;
-    int pm_fd;
-    int track_import;
-
-    char * preload_host;
-    char * preload_uri;
-
-    void * PIL_imaging;
-    void * PIL_imagingft;
-
-    void * compile_func;
-
-    struct uwsgi_string_list *modules;
-    struct uwsgi_string_list *last;
-    int debug_preload_modules;
 };
 
 struct uwsgi_rpc {

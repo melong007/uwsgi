@@ -186,12 +186,6 @@ void uwsgi_init_default() {
 	uwsgi_master_fifo_prepare();
 
 	uwsgi.notify_socket_fd = -1;
-
-    uwsgi.inter_error_reload = -1;
-
-    //set 1000 milliseconds that epoll_wait() will block
-    uwsgi.timer_resolution = 1;
-    uwsgi.last_timestamp_reload = NULL;
 }
 
 void uwsgi_setup_reload() {
@@ -322,8 +316,6 @@ void uwsgi_setup_workers() {
 	int i, j;
 	// allocate shared memory for workers + master
 	uwsgi.workers = (struct uwsgi_worker *) uwsgi_calloc_shared(sizeof(struct uwsgi_worker) * (uwsgi.numproc + 1));
-    uwsgi.last_timestamp_reload =  (time_t *) uwsgi_calloc_shared(sizeof(time_t));
-    *uwsgi.last_timestamp_reload = uwsgi_now();
 
 	for (i = 0; i <= uwsgi.numproc; i++) {
 		// allocate memory for apps
