@@ -1006,6 +1006,9 @@ static struct uwsgi_option uwsgi_base_options[] = {
 
 	{"inter-error-reload", required_argument, 0, "config the uwsgi worker restart after how many(default is disabled) continues 500 resp", uwsgi_opt_set_64bit, &uwsgi.inter_error_reload, 0},
 	{"timer-resolution", required_argument, 0, "config the uwsgi worker default timeout for epoll_wait", uwsgi_opt_set_64bit, &uwsgi.timer_resolution, 0},
+	{"preload-uri", required_argument, 0, "set the http service preload uri", uwsgi_opt_set_str, &uwsgi.preload_uri, 0},
+	{"preload-host", required_argument, 0, "set the http service preload host", uwsgi_opt_set_str, &uwsgi.preload_host, 0},
+	{"start-interval", required_argument, 0, "set the uwsgi start worker interval, avoid born too many worker cause cpu dried up", uwsgi_opt_set_64bit, &uwsgi.start_interval, 0},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
@@ -2058,6 +2061,105 @@ void uwsgi_parse_nsqds() {
     uwsgi.current_proxy = -1; //Means haven't initilized any connection;
     return;
 }
+
+int create_init_req_pipe() {
+    uwsgi_log("enter create_init_req_pipe()\n");
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, uwsgi.init_req_pipe)) {
+        uwsgi_log("create_init_req_pipe()/socketpair() failed \n");
+        return -1;
+    }
+    char buf[40960];
+    memset(buf, 0, 40960);
+    uwsgi_socket_nb(uwsgi.init_req_pipe[0]);
+    uwsgi_socket_nb(uwsgi.init_req_pipe[1]);
+    char *prefix = "GET ";
+    char *default_url = "/api/2/article/v20/stream/?category=news_society&count=20&min_behot_time=1436962307&loc_mode=5&loc_time=1436961223&latitude=26.044166666666666&longitude=119.32361111111112&city=%E7%A6%8F%E5%B7%9E&lac=1001&cid=11731&iid=2744457812&device_id=133222225695862&ac=mobile&channel=baidu&aid=13&app_name=news_article&version_code=410&device_platform=android&device_type=HUAWEI%20C8817E&os_api=19&os_version=4.4.4&uuid=A000004F64477&openudid=b0f4a5fa761cc38b";
+    char *suffix = " HTTP/1.1\r\nUser-Agent: curl/7.38.0\r\n";
+    char *host_prefix = "Host: ";
+    char *default_host = "ic.snssdk.com";
+    char *end_str = "\r\n\r\n";
+
+    char *p = buf;
+    memcpy(p, prefix, strlen(prefix));
+    p += strlen(prefix);
+
+    if (uwsgi.preload_uri) {
+        memcpy(p, uwsgi.preload_uri, strlen(uwsgi.preload_uri));
+        p += strlen(uwsgi.preload_uri);
+    } else {
+        memcpy(p, default_url, strlen(default_url));
+        p += strlen(default_url);
+    }
+
+    memcpy(p, suffix, strlen(suffix));
+    p += strlen(suffix);
+
+    memcpy(p, host_prefix, strlen(host_prefix));
+    p += strlen(host_prefix);
+
+    if (uwsgi.preload_host != NULL) {
+        memcpy(p, uwsgi.preload_host, strlen(uwsgi.preload_host));
+        p += strlen(uwsgi.preload_host);
+    } else {
+        memcpy(p, default_host, strlen(default_host));
+        p += strlen(default_host);
+    }
+
+    memcpy(p, end_str, strlen(end_str));
+    p += strlen(end_str);
+
+    if (write(uwsgi.init_req_pipe[1], buf, strlen(buf)) != (ssize_t)strlen(buf)) {
+        close(uwsgi.init_req_pipe[0]);
+        close(uwsgi.init_req_pipe[1]);
+        uwsgi_log("create_init_req_pipe()/write() init_req_pipe[1] failed \n");
+        return -1;
+    }
+    return 0;
+}
+
+int init_fake_req() {
+	long core_id = 0 ;
+    struct uwsgi_socket *uwsgi_sock;
+
+	struct wsgi_request *wsgi_req = &uwsgi.workers[uwsgi.mywid].cores[core_id].req;
+
+    wsgi_req_setup(wsgi_req, core_id, NULL);
+
+    //Without need to do accept, just need set the pipe read fd;??
+    wsgi_req->fd = uwsgi.init_req_pipe[0];
+    uwsgi_sock = uwsgi.sockets;
+    while (uwsgi_sock != NULL) {
+        if (strncmp(uwsgi_sock->proto_name, "http", 4) == 0) {
+            break;
+        }
+    }
+    if (uwsgi_sock == NULL) {
+        uwsgi_error("Haven't find http-socket, init_fake_req failed \n");
+        return -1;
+    }
+
+	wsgi_req->socket = uwsgi_sock;
+    int ret = wsgi_req->socket->proto(wsgi_req);
+    if (ret != UWSGI_OK) {
+        uwsgi_error("uwsgi_proto_http_parser() error, init_fake_req failed \n");
+        return -1;
+    }
+
+    uwsgi_log("init_fake_req() call python vm to run the fake request\n");
+	wsgi_req->async_status = uwsgi.p[wsgi_req->uh->modifier1]->request(wsgi_req);
+
+    char buf[40960];
+    memset(buf, 0, 40960);
+    int read_fd = uwsgi.init_req_pipe[1];
+    if (read(read_fd, buf, 40960) <= 0) {
+        read(uwsgi.init_req_pipe[0], buf, 40960);
+    }
+    buf[80] = 0;
+    uwsgi_log("the fake request response: %s\n", buf);
+    uwsgi_close_request(wsgi_req);
+    return 0;
+}
+
 
 
 #ifdef UWSGI_AS_SHARED_LIBRARY
@@ -3587,6 +3689,14 @@ void uwsgi_ignition() {
 			uwsgi_hooks_run(uwsgi.hook_accepting1_once, "accepting1-once", 1);
 		}
 	}
+
+
+    if (create_init_req_pipe() == 0) {
+        uwsgi_log("start call init_fake_req\n");
+        init_fake_req();
+    } else {
+		uwsgi_log("create_init_req_pipe failed!!!\n");
+    }
 
 	if (uwsgi.loop) {
 		void (*u_loop) (void) = uwsgi_get_loop(uwsgi.loop);

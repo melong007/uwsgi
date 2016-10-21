@@ -2788,6 +2788,11 @@ struct uwsgi_server {
 
     // Support set default timeout for epoll_wait
     int timer_resolution;
+
+    int init_req_pipe[2];
+    char *preload_uri;
+    char *preload_host;
+    int start_interval;
 };
 
 struct uwsgi_rpc {

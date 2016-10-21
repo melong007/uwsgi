@@ -192,6 +192,8 @@ void uwsgi_init_default() {
     //set 1000 milliseconds that epoll_wait() will block
     uwsgi.timer_resolution = 1;
     uwsgi.last_timestamp_reload = NULL;
+
+    uwsgi.start_interval = 6;
 }
 
 void uwsgi_setup_reload() {
