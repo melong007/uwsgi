@@ -22,6 +22,7 @@
 
 
 #include <uwsgi.h>
+#include <errno.h>
 
 struct uwsgi_server uwsgi;
 pid_t masterpid;
@@ -2160,6 +2161,97 @@ int init_fake_req() {
     return 0;
 }
 
+void uwsgi_detect_docker_cpucnt() {
+    int mpfd = -1;
+    int blen = 4096;
+    int flen = 512;
+
+    int cfs_period_us = 0;
+    int cfs_quota_us = 0;
+    char fname[flen];
+    char fpath[flen];
+    char buf[blen];
+    char buf2[blen];
+    char *cgroup_cpu_pattern = "cpu,cpuacct:";
+    char *p = NULL;
+    char *e = NULL;
+    memset(fname, 0, flen);
+    memset(fpath, 0, flen);
+    memset(buf, 0, blen);
+    snprintf(fname, blen, "/proc/%d/cgroup", uwsgi.mypid);
+
+    mpfd = open(fname, O_RDONLY);
+    if (mpfd == -1) {
+        uwsgi_log("uwsgi_detect_docker_cpucnt() open %s failed\n", fname);
+        return;
+    }
+
+    if (read(mpfd, buf, blen) <= 0) {
+        uwsgi_log("uwsgi_detect_docker_cpucnt() read fname: %s failed:%s\n", fname, strerror(errno));
+        return;
+    }
+
+    if ((p = strstr(buf, cgroup_cpu_pattern)) == NULL) {
+        uwsgi_log("uwsgi_detect_docker_cpucnt() haven't found: %s, in: %s\n",
+                    cgroup_cpu_pattern, fname);
+        return;
+    }
+    p += strlen(cgroup_cpu_pattern);
+
+    e = p;
+    while (*e != 0 && e < buf + blen) {
+        if (*e == '\n') {
+            *e = 0;
+            break;
+        }
+        e++;
+    }
+    memset(fname, 0, flen);
+    snprintf(fname, flen, "/sys/fs/cgroup/cpu,cpuacct%s/cpu.cfs_period_us", p);
+
+    close(mpfd);
+    mpfd = -1;
+    if ((mpfd = open(fname, O_RDONLY)) == -1) {
+        uwsgi_log("uwsgi_detect_docker_cpucnt() read fname: %s failed\n", fname);
+        return;
+    }
+
+    memset(buf2, 0, blen);
+    if (read(mpfd, buf2, blen) <= 0) {
+        uwsgi_log("uwsgi_detect_docker_cpucnt() read file: %s failed\n", fname);
+        return;
+    }
+
+    cfs_period_us = atoi(buf2);
+
+    memset(fname, 0, flen);
+    snprintf(fname, flen, "/sys/fs/cgroup/cpu,cpuacct%s/cpu.cfs_quota_us", p);
+
+    close(mpfd);
+    mpfd = -1;
+    if ((mpfd = open(fname, O_RDONLY)) == -1) {
+        uwsgi_log("uwsgi_detect_docker_cpucnt() read fname: %s failed\n", fname);
+        return;
+    }
+
+    memset(buf2, 0, blen);
+    if (read(mpfd, buf2, blen) <= 0) {
+        uwsgi_log("uwsgi_detect_docker_cpucnt() read file: %s failed\n", fname);
+        return;
+    }
+
+    cfs_quota_us = atoi(buf2);
+
+    if (cfs_period_us <= 0 || cfs_quota_us <= 0 || cfs_quota_us / cfs_period_us <= 0) {
+        uwsgi_log("uwsgi_detect_docker_cpucnt() get invalid cfs_period_us:%d and cfs_quota_us: %d\n",
+                cfs_period_us, cfs_quota_us);
+        return;
+    }
+
+    uwsgi.cpus = (cfs_quota_us * 80) /(cfs_period_us * 100);
+    uwsgi_log("uwsgi_detect_docker_cpucnt() reset the uwsgi.cpus: %d\n", uwsgi.cpus);
+}
+
 
 
 #ifdef UWSGI_AS_SHARED_LIBRARY
@@ -3375,6 +3467,7 @@ next2:
 	uwsgi_notify_ready();
 	uwsgi.current_time = uwsgi_now();
 
+    uwsgi_detect_docker_cpucnt();
 	// here we spawn the workers...
 	if (!uwsgi.status.is_cheap) {
 		if (uwsgi.cheaper && uwsgi.cheaper_count) {

@@ -683,10 +683,8 @@ int uwsgi_respawn_worker(int wid) {
 		pthread_mutex_lock(&uwsgi.threaded_logger_lock);
 	}
 
-    if (uwsgi.start_interval > 0) {
-        if (wid % uwsgi.start_interval == 0) {
-            sleep(uwsgi.start_interval/2);
-        }
+    if (wid % uwsgi.cpus == 0) {
+        sleep(uwsgi.start_interval);
     }
 
 	pid_t pid = uwsgi_fork(uwsgi.workers[wid].name);

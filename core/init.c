@@ -193,7 +193,7 @@ void uwsgi_init_default() {
     uwsgi.timer_resolution = 1;
     uwsgi.last_timestamp_reload = NULL;
 
-    uwsgi.start_interval = 6;
+    uwsgi.start_interval = 2;
 }
 
 void uwsgi_setup_reload() {
