@@ -193,7 +193,11 @@ void uwsgi_init_default() {
     uwsgi.timer_resolution = 1;
     uwsgi.last_timestamp_reload = NULL;
 
-    uwsgi.start_interval = 2;
+    uwsgi.start_interval = 3;
+
+    uwsgi.delay_open_port = 1;
+    uwsgi.delay_open_init = 0;
+    uwsgi.preinited_workers = NULL;
 }
 
 void uwsgi_setup_reload() {
@@ -325,6 +329,7 @@ void uwsgi_setup_workers() {
 	// allocate shared memory for workers + master
 	uwsgi.workers = (struct uwsgi_worker *) uwsgi_calloc_shared(sizeof(struct uwsgi_worker) * (uwsgi.numproc + 1));
     uwsgi.last_timestamp_reload =  (time_t *) uwsgi_calloc_shared(sizeof(time_t));
+    uwsgi.preinited_workers =  (int *) uwsgi_calloc_shared(sizeof(int));
     *uwsgi.last_timestamp_reload = uwsgi_now();
 
 	for (i = 0; i <= uwsgi.numproc; i++) {

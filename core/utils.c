@@ -1484,7 +1484,9 @@ int wsgi_req_accept(int queue, struct wsgi_request *wsgi_req) {
 	int timeout = -1;
 
 
-	thunder_lock;
+    if (uwsgi.reuse_port != 1) {
+	    thunder_lock;
+    }
 
 	// heartbeat
 	// in multithreaded mode we are now locked
@@ -1520,7 +1522,9 @@ int wsgi_req_accept(int queue, struct wsgi_request *wsgi_req) {
 
 	ret = event_queue_wait(queue, timeout, &interesting_fd);
 	if (ret < 0) {
-		thunder_unlock;
+        if (uwsgi.reuse_port != 1) {
+		    thunder_unlock;
+        }
 		return -1;
 	}
 
@@ -1529,7 +1533,9 @@ int wsgi_req_accept(int queue, struct wsgi_request *wsgi_req) {
 		uwsgi_heartbeat();
 		// no need to continue if timed-out
 		if (ret == 0) {
-			thunder_unlock;
+            if (uwsgi.reuse_port != 1) {
+		        thunder_unlock;
+            }
 			return -1;
 		}
 	}
@@ -1540,7 +1546,9 @@ int wsgi_req_accept(int queue, struct wsgi_request *wsgi_req) {
 
 	if (uwsgi.signal_socket > -1 && (interesting_fd == uwsgi.signal_socket || interesting_fd == uwsgi.my_signal_socket)) {
 
-		thunder_unlock;
+        if (uwsgi.reuse_port != 1) {
+            thunder_unlock;
+        }
 
 		uwsgi_receive_signal(interesting_fd, "worker", uwsgi.mywid);
 
@@ -1554,7 +1562,10 @@ int wsgi_req_accept(int queue, struct wsgi_request *wsgi_req) {
 		if (interesting_fd == uwsgi_sock->fd || (uwsgi_sock->retry && uwsgi_sock->retry[wsgi_req->async_id]) || (uwsgi_sock->fd_threads && interesting_fd == uwsgi_sock->fd_threads[wsgi_req->async_id])) {
 			wsgi_req->socket = uwsgi_sock;
 			wsgi_req->fd = wsgi_req->socket->proto_accept(wsgi_req, interesting_fd);
-			thunder_unlock;
+
+            if (uwsgi.reuse_port != 1) {
+                thunder_unlock;
+            }
 			if (wsgi_req->fd < 0) {
 				if (uwsgi.threads > 1)
 					pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &ret);
@@ -1571,7 +1582,9 @@ int wsgi_req_accept(int queue, struct wsgi_request *wsgi_req) {
 		uwsgi_sock = uwsgi_sock->next;
 	}
 
-	thunder_unlock;
+    if (uwsgi.reuse_port != 1) {
+        thunder_unlock;
+    }
 	if (uwsgi.threads > 1)
 		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &ret);
 	return -1;

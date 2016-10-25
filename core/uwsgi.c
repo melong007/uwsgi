@@ -1275,12 +1275,37 @@ void simple_goodbye_cruel_world() {
 	}
 
 	uwsgi.workers[uwsgi.mywid].manage_next_request = 0;
-	uwsgi_log("...The work of process %d is done. Seeya!\n", getpid());
-	exit(0);
+    if (uwsgi.reuse_port == 1) {
+        struct uwsgi_socket *uwsgi_sock = uwsgi.sockets;
+        while (uwsgi_sock) {
+            //Reset the uwsgi_sock to unbound, and do the rebound at the worker;
+            if (uwsgi_sock->fd > 0) {
+                shutdown(uwsgi_sock->fd, 0); 
+            }
+            uwsgi_sock = uwsgi_sock->next;
+        }
+        uwsgi.reuse_port_grace_exit = 1; 
+
+        uwsgi_log("...The work of process %d is done. reuse_port_grace_exit set to 1, exit after finish all request\n", getpid());
+    }else {
+	    uwsgi_log("...The work of process %d is done. set  Seeya!\n", getpid());
+	    exit(0);
+    }
 }
 
 void goodbye_cruel_world() {
 	uwsgi_curse(uwsgi.mywid, 0);
+    if (uwsgi.reuse_port) {
+        struct uwsgi_socket *uwsgi_sock = uwsgi.sockets;
+        while (uwsgi_sock) {
+            //Reset the uwsgi_sock to unbound, and do the rebound at the worker;
+            if (uwsgi_sock->fd > 0) {
+                close(uwsgi_sock->fd); 
+                uwsgi_sock->fd = -1;
+            }
+            uwsgi_sock = uwsgi_sock->next;
+        }
+    }
 
 	if (!uwsgi.gbcw_hook) {
 		simple_goodbye_cruel_world();
@@ -2074,7 +2099,8 @@ int create_init_req_pipe() {
     uwsgi_socket_nb(uwsgi.init_req_pipe[0]);
     uwsgi_socket_nb(uwsgi.init_req_pipe[1]);
     char *prefix = "GET ";
-    char *default_url = "/api/2/article/v20/stream/?category=news_society&count=20&min_behot_time=1436962307&loc_mode=5&loc_time=1436961223&latitude=26.044166666666666&longitude=119.32361111111112&city=%E7%A6%8F%E5%B7%9E&lac=1001&cid=11731&iid=2744457812&device_id=133222225695862&ac=mobile&channel=baidu&aid=13&app_name=news_article&version_code=410&device_platform=android&device_type=HUAWEI%20C8817E&os_api=19&os_version=4.4.4&uuid=A000004F64477&openudid=b0f4a5fa761cc38b";
+    //char *default_url = "/api/2/article/v20/stream/?category=news_society&count=20&min_behot_time=1436962307&loc_mode=5&loc_time=1436961223&latitude=26.044166666666666&longitude=119.32361111111112&city=%E7%A6%8F%E5%B7%9E&lac=1001&cid=11731&iid=2744457812&device_id=133222225695862&ac=mobile&channel=baidu&aid=13&app_name=news_article&version_code=410&device_platform=android&device_type=HUAWEI%20C8817E&os_api=19&os_version=4.4.4&uuid=A000004F64477&openudid=b0f4a5fa761cc38b";
+    char *default_url = "/api/2/article/hot_words/?iid=5880961673&device_id=17608617287&ac=4g&channel=oppo-cpa&aid=13&app_name=news_article&version_code=582&version_name=5.8.2&device_platform=android&ab_version=83097%2C86231%2C79288%2C86845%2C86115%2C85045%2C86031%2C86742%2C86836%2C31646%2C86300%2C86427%2C82681%2C86843%2C86660%2C84558%2C86778&ab_client=a1%2Cc4%2Ce1%2Cf2%2Cg2%2Cf7&ab_group=z1&ab_feature=z1&abflag=3&ssmix=a&device_type=OPPO+R9m&device_brand=OPPO&language=zh&os_api=22&os_version=5.1&uuid=861262034107452&openudid=43c725982ae5b0d5&manifest_version_code=582&resolution=1080*1920&dpi=480&update_version_code=5824&_rticket=1477362346772";
     char *suffix = " HTTP/1.1\r\nUser-Agent: curl/7.38.0\r\n";
     char *host_prefix = "Host: ";
     char *default_host = "ic.snssdk.com";
@@ -2122,6 +2148,8 @@ int init_fake_req() {
 	long core_id = 0 ;
     struct uwsgi_socket *uwsgi_sock;
 
+	//struct wsgi_request *wsgi_req = uwsgi_calloc(sizeof(struct wsgi_request));
+    //*wsgi_req = uwsgi.workers[uwsgi.mywid].cores[core_id].req;
 	struct wsgi_request *wsgi_req = &uwsgi.workers[uwsgi.mywid].cores[core_id].req;
 
     wsgi_req_setup(wsgi_req, core_id, NULL);
@@ -2158,6 +2186,7 @@ int init_fake_req() {
     buf[80] = 0;
     uwsgi_log("the fake request response: %s\n", buf);
     uwsgi_close_request(wsgi_req);
+    //free(wsgi_req);
     return 0;
 }
 
@@ -2183,18 +2212,18 @@ void uwsgi_detect_docker_cpucnt() {
     mpfd = open(fname, O_RDONLY);
     if (mpfd == -1) {
         uwsgi_log("uwsgi_detect_docker_cpucnt() open %s failed\n", fname);
-        return;
+        goto failed;
     }
 
     if (read(mpfd, buf, blen) <= 0) {
         uwsgi_log("uwsgi_detect_docker_cpucnt() read fname: %s failed:%s\n", fname, strerror(errno));
-        return;
+        goto failed;
     }
 
     if ((p = strstr(buf, cgroup_cpu_pattern)) == NULL) {
         uwsgi_log("uwsgi_detect_docker_cpucnt() haven't found: %s, in: %s\n",
                     cgroup_cpu_pattern, fname);
-        return;
+        goto failed;
     }
     p += strlen(cgroup_cpu_pattern);
 
@@ -2213,13 +2242,13 @@ void uwsgi_detect_docker_cpucnt() {
     mpfd = -1;
     if ((mpfd = open(fname, O_RDONLY)) == -1) {
         uwsgi_log("uwsgi_detect_docker_cpucnt() read fname: %s failed\n", fname);
-        return;
+        goto failed;
     }
 
     memset(buf2, 0, blen);
     if (read(mpfd, buf2, blen) <= 0) {
         uwsgi_log("uwsgi_detect_docker_cpucnt() read file: %s failed\n", fname);
-        return;
+        goto failed;
     }
 
     cfs_period_us = atoi(buf2);
@@ -2231,13 +2260,13 @@ void uwsgi_detect_docker_cpucnt() {
     mpfd = -1;
     if ((mpfd = open(fname, O_RDONLY)) == -1) {
         uwsgi_log("uwsgi_detect_docker_cpucnt() read fname: %s failed\n", fname);
-        return;
+        goto failed;
     }
 
     memset(buf2, 0, blen);
     if (read(mpfd, buf2, blen) <= 0) {
         uwsgi_log("uwsgi_detect_docker_cpucnt() read file: %s failed\n", fname);
-        return;
+        goto failed;
     }
 
     cfs_quota_us = atoi(buf2);
@@ -2245,11 +2274,17 @@ void uwsgi_detect_docker_cpucnt() {
     if (cfs_period_us <= 0 || cfs_quota_us <= 0 || cfs_quota_us / cfs_period_us <= 0) {
         uwsgi_log("uwsgi_detect_docker_cpucnt() get invalid cfs_period_us:%d and cfs_quota_us: %d\n",
                 cfs_period_us, cfs_quota_us);
-        return;
+        goto failed;
     }
 
-    uwsgi.cpus = (cfs_quota_us * 80) /(cfs_period_us * 100);
+    uwsgi.cpus = (cfs_quota_us * 50) /(cfs_period_us * 100);
     uwsgi_log("uwsgi_detect_docker_cpucnt() reset the uwsgi.cpus: %d\n", uwsgi.cpus);
+    return;
+
+failed:
+    uwsgi.cpus = uwsgi.cpus * 4 /10;
+    uwsgi_log("uwsgi_detect_docker_cpucnt() reset the uwsgi.cpus: %d\n", uwsgi.cpus);
+    return;
 }
 
 
@@ -3058,7 +3093,12 @@ int uwsgi_start(void *v_argv) {
 
 
 		//now bind all the unbound sockets
-		uwsgi_bind_sockets();
+        uwsgi.delay_open_deadline = uwsgi_now() + 20;
+        if (uwsgi.delay_open_port == 1) {
+		    uwsgi_xbind_sockets();
+        } else {
+		    uwsgi_bind_sockets();
+        }
 
 		// put listening socket in non-blocking state and set the protocol
 		uwsgi_set_sockets_protocols();
@@ -3732,6 +3772,60 @@ void uwsgi_worker_run() {
 
 }
 
+void uwsgi_reinit_listen_socket() {
+	struct uwsgi_socket *uwsgi_sock = uwsgi.sockets;
+    while (uwsgi_sock) {
+        //Reset the uwsgi_sock to unbound, and do the rebound at the worker;
+        uwsgi_sock->bound = 0;
+        if (uwsgi_sock->fd > 0) {
+            close(uwsgi_sock->fd); 
+            uwsgi_sock->fd = -1;
+        }
+        char *tcp_port = strrchr(uwsgi_sock->name, ':');
+        int current_defer_accept = uwsgi.no_defer_accept;
+        if (uwsgi_sock->no_defer) {
+            uwsgi.no_defer_accept = 1;
+        }
+        if (tcp_port == NULL) {
+            uwsgi_sock->fd = bind_to_unix(uwsgi_sock->name, uwsgi.listen_queue, uwsgi.chmod_socket, uwsgi.abstract_socket);
+            uwsgi_sock->family = AF_UNIX;
+            if (uwsgi.chown_socket) {
+                uwsgi_chown(uwsgi_sock->name, uwsgi.chown_socket);
+            }
+            uwsgi_log("uwsgi worker reinit socket %d bound to UNIX address %s fd %d\n", uwsgi_get_socket_num(uwsgi_sock), uwsgi_sock->name, uwsgi_sock->fd);
+            struct stat st;
+            if (uwsgi_sock->name[0] != '@' && !stat(uwsgi_sock->name, &st)) {
+                uwsgi_sock->inode = st.st_ino;
+            }
+        }
+        else {
+#ifdef AF_INET6
+            if (uwsgi_sock->name[0] == '[' && tcp_port[-1] == ']') {
+                uwsgi_sock->fd = bind_to_tcp(uwsgi_sock->name, uwsgi.listen_queue, tcp_port);
+                uwsgi_log("uwsgi worker reinit socket %d bound to TCP6 address %s fd %d\n", uwsgi_get_socket_num(uwsgi_sock), uwsgi_sock->name, uwsgi_sock->fd);
+                uwsgi_sock->family = AF_INET6;
+            }
+            else {
+#endif
+                uwsgi_sock->fd = bind_to_tcp(uwsgi_sock->name, uwsgi.listen_queue, tcp_port);
+                uwsgi_log("uwsgi worker[%d] reinit socket %d bound to TCP address %s fd %d\n", uwsgi.mywid, uwsgi_get_socket_num(uwsgi_sock), uwsgi_sock->name, uwsgi_sock->fd);
+                uwsgi_sock->family = AF_INET;
+#ifdef AF_INET6
+            }
+#endif
+        }
+
+        if (uwsgi_sock->fd < 0 && !uwsgi_sock->per_core) {
+            uwsgi_log("unable to create server socket on: %s\n", uwsgi_sock->name);
+            exit(1);
+        }
+        uwsgi.no_defer_accept = current_defer_accept;
+        uwsgi_sock->bound = 1;
+        uwsgi_sock = uwsgi_sock->next;
+    }
+}
+
+
 
 void uwsgi_ignition() {
 
@@ -3789,6 +3883,14 @@ void uwsgi_ignition() {
         init_fake_req();
     } else {
 		uwsgi_log("create_init_req_pipe failed!!!\n");
+    }
+
+    /*if (uwsgi.reuse_port == 1) {
+        uwsgi_reinit_listen_socket(uwsgi.mywid);
+    }*/
+    while (uwsgi_now() < uwsgi.delay_open_deadline) {
+		uwsgi_log("worker[%d] wait for delay_open_deadline: %d\n", uwsgi.mywid, uwsgi_now() - uwsgi.delay_open_deadline);
+        sleep(1);
     }
 
 	if (uwsgi.loop) {

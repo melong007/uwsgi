@@ -1803,6 +1803,7 @@ struct uwsgi_server {
 
 	uint64_t master_cycles;
 
+	int reuse_port_grace_exit;
 	int reuse_port;
 	int tcp_fast_open;
 	int tcp_fast_open_client;
@@ -2793,6 +2794,12 @@ struct uwsgi_server {
     char *preload_uri;
     char *preload_host;
     int start_interval;
+
+	int delay_open_port;
+	int delay_open_deadline;
+    int delay_open_init;
+
+    int *preinited_workers;
 };
 
 struct uwsgi_rpc {
@@ -3062,6 +3069,7 @@ void grace_them_all(int);
 void end_me(int);
 int bind_to_unix(char *, int, int, int);
 int bind_to_tcp(char *, int, char *);
+int xbind_to_tcp(char *, int, char *);
 int bind_to_udp(char *, int, int);
 int bind_to_unix_dgram(char *);
 int timed_connect(struct pollfd *, const struct sockaddr *, int, int, int);
@@ -4187,6 +4195,7 @@ void uwsgi_set_cpu_affinity(void);
 void uwsgi_emperor_start(void);
 
 void uwsgi_bind_sockets(void);
+void uwsgi_xbind_sockets(void);
 void uwsgi_set_sockets_protocols(void);
 
 struct uwsgi_buffer *uwsgi_buffer_new(size_t);

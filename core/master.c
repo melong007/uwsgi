@@ -299,7 +299,33 @@ void vassal_sos() {
         if (write(uwsgi.emperor_fd, &byte, 1) != 1) {
         	uwsgi_error("vassal_sos()/write()");
         }
+
 }
+
+void uwsgi_delay_init_listen_sockets() {
+	struct uwsgi_socket *uwsgi_sock = uwsgi.sockets;
+    uwsgi_log("##########uWSGI master Start to call really listen\n");
+    while (uwsgi_sock) {
+        //Reset the uwsgi_sock to unbound, and do the rebound at the worker;
+        uwsgi_sock->bound = 0;
+        if (uwsgi_sock->fd > 0) {
+            /*if (bind(serverfd, (struct sockaddr *) &uws_addr, addr_len) != 0) {
+                if (errno == EADDRINUSE) {
+                    uwsgi_log("probably another instance of uWSGI is running on the same address (%s).\n", socket_name);
+                }
+                uwsgi_error("bind()");
+                uwsgi_nuclear_blast();
+                return -1;
+            }*/
+            if (listen(uwsgi_sock->fd, 127) != 0) {
+                uwsgi_error("master delay listen() fd failed");
+            }
+        }
+        uwsgi_sock = uwsgi_sock->next;
+    }
+}
+
+
 
 int master_loop(char **argv, char **environ) {
 
@@ -624,6 +650,10 @@ int master_loop(char **argv, char **environ) {
 				uwsgi.p[i]->master_cycle();
 			}
 		}
+        if (uwsgi.delay_open_deadline < uwsgi_now() && uwsgi.delay_open_init == 0) {
+            uwsgi_delay_init_listen_sockets(); 
+            uwsgi.delay_open_init = 1;
+        }
 
 		// check for death (before reload !!!)
 		uwsgi_master_check_death();

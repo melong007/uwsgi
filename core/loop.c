@@ -143,6 +143,10 @@ void *simple_loop_run(void *arg1) {
 		wsgi_req_setup(wsgi_req, core_id, NULL);
 
 		if (wsgi_req_accept(main_queue, wsgi_req)) {
+            if (uwsgi.reuse_port_grace_exit == 1) {
+                uwsgi_log("...The work of process %d is really done. exit Now after finish all request\n", getpid());
+                exit(0);
+            }
 			continue;
 		}
 

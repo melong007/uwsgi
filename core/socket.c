@@ -655,6 +655,136 @@ socklen_t socket_to_in_addr(char *socket_name, char *port, int portn, struct soc
 
 }
 
+int xbind_to_tcp(char *socket_name, int listen_queue, char *tcp_port) {
+
+	int serverfd;
+#ifdef AF_INET6
+	struct sockaddr_in6 uws_addr;
+#else
+	struct sockaddr_in uws_addr;
+#endif
+	int family = AF_INET;
+	socklen_t addr_len = sizeof(struct sockaddr_in);
+
+#ifdef AF_INET6
+	if (socket_name[0] == '[' && tcp_port[-1] == ']') {
+		family = AF_INET6;
+		socket_to_in_addr6(socket_name, tcp_port, 0, &uws_addr);
+		addr_len = sizeof(struct sockaddr_in6);
+	}
+	else {	
+#endif
+		socket_to_in_addr(socket_name, tcp_port, 0, (struct sockaddr_in *) &uws_addr);
+#ifdef AF_INET6
+	}
+#endif
+
+
+	serverfd = create_server_socket(family, SOCK_STREAM);
+	if (serverfd < 0) return -1;
+	
+#ifdef __linux__
+#ifndef IP_FREEBIND
+#define IP_FREEBIND 15
+#endif
+	if (uwsgi.freebind) {
+		if (setsockopt(serverfd, SOL_IP, IP_FREEBIND, (const void *) &uwsgi.freebind, sizeof(int)) < 0) {
+			uwsgi_error("IP_FREEBIND setsockopt()");
+			uwsgi_nuclear_blast();
+			return -1;
+		}
+	}
+#endif
+
+#ifdef SO_REUSEPORT
+    if (setsockopt(serverfd, SOL_SOCKET, SO_REUSEPORT, (const void *) &uwsgi.reuse_port, sizeof(int)) < 0) {
+        uwsgi_error("SO_REUSEPORT setsockopt()");
+        uwsgi_nuclear_blast();
+        return -1;
+    }
+    uwsgi.reuse_port = 1;
+    uwsgi_log("Set SO_REUSEPORT Successfully!!!\n");
+#else
+    uwsgi_log("!!! your system does not support SO_REUSEPORT !!!\n");
+#endif
+
+	if (uwsgi.tcp_fast_open) {
+#ifdef TCP_FASTOPEN
+
+    #ifndef SOL_TCP
+    #define SOL_TCP IPPROTO_TCP
+    #endif
+
+		if (setsockopt(serverfd, SOL_TCP, TCP_FASTOPEN, (const void *) &uwsgi.tcp_fast_open, sizeof(int)) < 0) {
+			uwsgi_error("TCP_FASTOPEN setsockopt()");
+		}
+		else {
+			uwsgi_log("TCP_FASTOPEN enabled on %s\n", socket_name);
+		}
+#else
+		uwsgi_log("!!! your system does not support TCP_FASTOPEN !!!\n");
+#endif
+	}
+
+	if (uwsgi.so_send_timeout) {
+		struct timeval tv;
+		tv.tv_sec = uwsgi.so_send_timeout;
+		tv.tv_usec = 0;
+		if (setsockopt(serverfd, SOL_SOCKET, SO_SNDTIMEO, (const void *) &tv, sizeof(struct timeval)) < 0) {
+			uwsgi_error("SO_SNDTIMEO setsockopt()");
+			uwsgi_nuclear_blast();
+			return -1;
+		}
+	}
+
+	if (!uwsgi.no_defer_accept) {
+
+#ifdef __linux__
+		if (setsockopt(serverfd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &uwsgi.socket_timeout, sizeof(int))) {
+			uwsgi_error("TCP_DEFER_ACCEPT setsockopt()");
+		}
+		// OSX has no SO_ACCEPTFILTER !!!
+#elif defined(__freebsd__)
+		struct accept_filter_arg afa;
+		strcpy(afa.af_name, "dataready");
+		afa.af_arg[0] = 0;
+		if (setsockopt(serverfd, SOL_SOCKET, SO_ACCEPTFILTER, &afa, sizeof(struct accept_filter_arg))) {
+			uwsgi_error("SO_ACCEPTFILTER setsockopt()");
+		}
+#endif
+
+	}
+
+	if (uwsgi.so_keepalive) {
+		if (setsockopt(serverfd, SOL_SOCKET, SO_KEEPALIVE, &uwsgi.so_keepalive, sizeof(int))) {
+			uwsgi_error("SO_KEEPALIVE setsockopt()");
+		}
+	}
+
+
+	if (bind(serverfd, (struct sockaddr *) &uws_addr, addr_len) != 0) {
+		if (errno == EADDRINUSE) {
+			uwsgi_log("probably another instance of uWSGI is running on the same address (%s).\n", socket_name);
+		}
+		uwsgi_error("bind()");
+		uwsgi_nuclear_blast();
+		return -1;
+	}
+
+    /*
+	if (listen(serverfd, listen_queue) != 0) {
+		uwsgi_error("listen()");
+		uwsgi_nuclear_blast();
+		return -1;
+	}*/
+
+
+	if (tcp_port)
+		tcp_port[0] = ':';
+
+	return serverfd;
+}
+
 int bind_to_tcp(char *socket_name, int listen_queue, char *tcp_port) {
 
 	int serverfd;
@@ -1699,6 +1829,156 @@ void uwsgi_map_sockets() {
 		}
 	}
 
+}
+
+void uwsgi_xbind_sockets() {
+	socklen_t socket_type_len;
+	union uwsgi_sockaddr usa;
+	union uwsgi_sockaddr_ptr gsa;
+
+	struct uwsgi_socket *uwsgi_sock = uwsgi.sockets;
+	while (uwsgi_sock) {
+		if (!uwsgi_sock->bound && !uwsgi_socket_is_already_bound(uwsgi_sock->name)) {
+			char *tcp_port = strrchr(uwsgi_sock->name, ':');
+			int current_defer_accept = uwsgi.no_defer_accept;
+                        if (uwsgi_sock->no_defer) {
+                                uwsgi.no_defer_accept = 1;
+                        }
+			if (tcp_port == NULL) {
+				uwsgi_sock->fd = bind_to_unix(uwsgi_sock->name, uwsgi.listen_queue, uwsgi.chmod_socket, uwsgi.abstract_socket);
+				uwsgi_sock->family = AF_UNIX;
+				if (uwsgi.chown_socket) {
+					uwsgi_chown(uwsgi_sock->name, uwsgi.chown_socket);
+				}
+				uwsgi_log("uwsgi socket %d bound to UNIX address %s fd %d\n", uwsgi_get_socket_num(uwsgi_sock), uwsgi_sock->name, uwsgi_sock->fd);
+				struct stat st;
+				if (uwsgi_sock->name[0] != '@' && !stat(uwsgi_sock->name, &st)) {
+					uwsgi_sock->inode = st.st_ino;
+				}
+			}
+			else {
+#ifdef AF_INET6
+				if (uwsgi_sock->name[0] == '[' && tcp_port[-1] == ']') {
+					uwsgi_sock->fd = bind_to_tcp(uwsgi_sock->name, uwsgi.listen_queue, tcp_port);
+					uwsgi_log("uwsgi socket %d bound to TCP6 address %s fd %d\n", uwsgi_get_socket_num(uwsgi_sock), uwsgi_sock->name, uwsgi_sock->fd);
+					uwsgi_sock->family = AF_INET6;
+				}
+				else {
+#endif
+					uwsgi_sock->fd = xbind_to_tcp(uwsgi_sock->name, uwsgi.listen_queue, tcp_port);
+					uwsgi_log("uwsgi socket %d bound to TCP address %s fd %d\n", uwsgi_get_socket_num(uwsgi_sock), uwsgi_sock->name, uwsgi_sock->fd);
+					uwsgi_sock->family = AF_INET;
+#ifdef AF_INET6
+				}
+#endif
+			}
+
+			if (uwsgi_sock->fd < 0 && !uwsgi_sock->per_core) {
+				uwsgi_log("unable to create server socket on: %s\n", uwsgi_sock->name);
+				exit(1);
+			}
+			uwsgi.no_defer_accept = current_defer_accept;
+		}
+		uwsgi_sock->bound = 1;
+		uwsgi_sock = uwsgi_sock->next;
+	}
+
+	int zero_used = 0;
+	uwsgi_sock = uwsgi.sockets;
+	while (uwsgi_sock) {
+		if (uwsgi_sock->bound && uwsgi_sock->fd == 0) {
+			zero_used = 1;
+			break;
+		}
+		uwsgi_sock = uwsgi_sock->next;
+	}
+
+	if (!zero_used) {
+		socket_type_len = sizeof(struct sockaddr_un);
+		gsa.sa = (struct sockaddr *) &usa;
+		if (!uwsgi.skip_zero && !getsockname(0, gsa.sa, &socket_type_len)) {
+			if (gsa.sa->sa_family == AF_UNIX) {
+				uwsgi_sock = uwsgi_new_socket(uwsgi_getsockname(0));
+				uwsgi_sock->family = AF_UNIX;
+				uwsgi_sock->fd = 0;
+				uwsgi_sock->bound = 1;
+				uwsgi_log("uwsgi socket %d inherited UNIX address %s fd 0\n", uwsgi_get_socket_num(uwsgi_sock), uwsgi_sock->name);
+				if (!uwsgi.is_a_reload) {
+					if (uwsgi.chown_socket) {
+                                        	uwsgi_chown(uwsgi_sock->name, uwsgi.chown_socket);
+                                	}
+					if (uwsgi.chmod_socket) {
+                				if (uwsgi.chmod_socket_value) {
+                        				if (chmod(uwsgi_sock->name, uwsgi.chmod_socket_value) != 0) {
+                                				uwsgi_error("inherit fd0: chmod()");
+                        				}
+                				}
+                				else {
+                        				uwsgi_log("chmod() fd0 socket to 666 for lazy and brave users\n");
+                        				if (chmod(uwsgi_sock->name, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH) != 0) {
+                                				uwsgi_error("inherit fd0: chmod()");
+                        				}
+						}
+                			}
+				}
+			}
+			else {
+				uwsgi_sock = uwsgi_new_socket(uwsgi_getsockname(0));
+				uwsgi_sock->family = AF_INET;
+				uwsgi_sock->fd = 0;
+				uwsgi_sock->bound = 1;
+				uwsgi_log("uwsgi socket %d inherited INET address %s fd 0\n", uwsgi_get_socket_num(uwsgi_sock), uwsgi_sock->name);
+			}
+		}
+		else if (!uwsgi.honour_stdin) {
+			int fd = open("/dev/null", O_RDONLY);
+			if (fd < 0) {
+				uwsgi_error_open("/dev/null");
+				uwsgi_log("WARNING: unable to remap stdin, /dev/null not available\n");
+				goto stdin_done;
+			}
+			if (fd != 0) {
+				if (dup2(fd, 0) < 0) {
+					uwsgi_error("dup2()");
+					exit(1);
+				}
+				close(fd);
+			}
+		}
+		else if (uwsgi.honour_stdin) {
+			if (!tcgetattr(0, &uwsgi.termios)) {
+				uwsgi.restore_tc = 1;
+			}
+		}
+
+	}
+
+stdin_done:
+
+	if (uwsgi.chown_socket) {
+		if (!uwsgi.master_as_root) {
+			uwsgi_as_root();
+		}
+	}
+
+
+	// check for auto_port socket
+	uwsgi_sock = uwsgi.sockets;
+	while (uwsgi_sock) {
+		if (uwsgi_sock->auto_port) {
+#ifdef AF_INET6
+			if (uwsgi_sock->family == AF_INET6) {
+				uwsgi_log("uwsgi socket %d bound to TCP6 address %s (port auto-assigned) fd %d\n", uwsgi_get_socket_num(uwsgi_sock), uwsgi_sock->name, uwsgi_sock->fd);
+			}
+			else {
+#endif
+				uwsgi_log("uwsgi socket %d bound to TCP address %s (port auto-assigned) fd %d\n", uwsgi_get_socket_num(uwsgi_sock), uwsgi_sock->name, uwsgi_sock->fd);
+#ifdef AF_INET6
+			}
+#endif
+		}
+		uwsgi_sock = uwsgi_sock->next;
+	}
 }
 
 void uwsgi_bind_sockets() {
