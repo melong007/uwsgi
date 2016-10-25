@@ -650,9 +650,13 @@ int master_loop(char **argv, char **environ) {
 				uwsgi.p[i]->master_cycle();
 			}
 		}
-        if (uwsgi.delay_open_deadline < uwsgi_now() && uwsgi.delay_open_init == 0) {
+        if (uwsgi.delay_open_init == 0 &&
+            uwsgi.preinited_workers != NULL &&
+            *uwsgi.preinited_workers == uwsgi.numproc - 1)
+        {
             uwsgi_delay_init_listen_sockets(); 
             uwsgi.delay_open_init = 1;
+            *uwsgi.listen_port_opened = 1;
         }
 
 		// check for death (before reload !!!)

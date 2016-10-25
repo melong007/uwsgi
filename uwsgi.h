@@ -1803,6 +1803,7 @@ struct uwsgi_server {
 
 	uint64_t master_cycles;
 
+    int xreuse_port;
 	int reuse_port_grace_exit;
 	int reuse_port;
 	int tcp_fast_open;
@@ -2800,6 +2801,7 @@ struct uwsgi_server {
     int delay_open_init;
 
     int *preinited_workers;
+    int *listen_port_opened;
 };
 
 struct uwsgi_rpc {

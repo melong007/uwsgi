@@ -330,6 +330,9 @@ void uwsgi_setup_workers() {
 	uwsgi.workers = (struct uwsgi_worker *) uwsgi_calloc_shared(sizeof(struct uwsgi_worker) * (uwsgi.numproc + 1));
     uwsgi.last_timestamp_reload =  (time_t *) uwsgi_calloc_shared(sizeof(time_t));
     uwsgi.preinited_workers =  (int *) uwsgi_calloc_shared(sizeof(int));
+    uwsgi.listen_port_opened =  (int *) uwsgi_calloc_shared(sizeof(int));
+    *uwsgi.preinited_workers = 0;
+    *uwsgi.listen_port_opened = 0;
     *uwsgi.last_timestamp_reload = uwsgi_now();
 
 	for (i = 0; i <= uwsgi.numproc; i++) {

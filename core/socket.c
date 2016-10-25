@@ -702,7 +702,7 @@ int xbind_to_tcp(char *socket_name, int listen_queue, char *tcp_port) {
         uwsgi_nuclear_blast();
         return -1;
     }
-    uwsgi.reuse_port = 1;
+    uwsgi.xreuse_port = 1;
     uwsgi_log("Set SO_REUSEPORT Successfully!!!\n");
 #else
     uwsgi_log("!!! your system does not support SO_REUSEPORT !!!\n");

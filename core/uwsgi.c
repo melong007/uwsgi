@@ -1275,8 +1275,8 @@ void simple_goodbye_cruel_world() {
 	}
 
 	uwsgi.workers[uwsgi.mywid].manage_next_request = 0;
-    if (uwsgi.reuse_port == 1) {
-        struct uwsgi_socket *uwsgi_sock = uwsgi.sockets;
+    if (uwsgi.xreuse_port == 1) {
+        /*struct uwsgi_socket *uwsgi_sock = uwsgi.sockets;
         while (uwsgi_sock) {
             //Reset the uwsgi_sock to unbound, and do the rebound at the worker;
             if (uwsgi_sock->fd > 0) {
@@ -1287,6 +1287,9 @@ void simple_goodbye_cruel_world() {
         uwsgi.reuse_port_grace_exit = 1; 
 
         uwsgi_log("...The work of process %d is done. reuse_port_grace_exit set to 1, exit after finish all request\n", getpid());
+        */
+	    uwsgi_log("...The work of process %d is done. set  Seeya!\n", getpid());
+	    exit(0);
     }else {
 	    uwsgi_log("...The work of process %d is done. set  Seeya!\n", getpid());
 	    exit(0);
@@ -3885,12 +3888,24 @@ void uwsgi_ignition() {
 		uwsgi_log("create_init_req_pipe failed!!!\n");
     }
 
-    /*if (uwsgi.reuse_port == 1) {
-        uwsgi_reinit_listen_socket(uwsgi.mywid);
-    }*/
-    while (uwsgi_now() < uwsgi.delay_open_deadline) {
-		uwsgi_log("worker[%d] wait for delay_open_deadline: %d\n", uwsgi.mywid, uwsgi_now() - uwsgi.delay_open_deadline);
-        sleep(1);
+    if (*uwsgi.listen_port_opened == 0) {
+        thunder_lock;
+        if (uwsgi.preinited_workers != NULL) {
+            int tmp = *uwsgi.preinited_workers;
+            *uwsgi.preinited_workers = ++tmp;
+        }
+        thunder_unlock;
+        /*if (uwsgi.reuse_port == 1) {
+          uwsgi_reinit_listen_socket(uwsgi.mywid);
+          }*/
+        while (uwsgi.listen_port_opened != NULL &&
+                uwsgi.preinited_workers != NULL &&
+                *uwsgi.listen_port_opened == 0)
+        {
+            uwsgi_log("worker[%d] wait for other worker preinit, current initilized: %d\n",
+                    uwsgi.mywid, *uwsgi.preinited_workers);
+            sleep(1);
+        }
     }
 
 	if (uwsgi.loop) {
