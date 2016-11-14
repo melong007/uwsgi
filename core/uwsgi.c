@@ -3078,6 +3078,8 @@ int uwsgi_start(void *v_argv) {
 		}
 	}
 
+    //Force use delay_open_port
+    uwsgi.delay_open_port = 1;
 	if (!uwsgi.no_server) {
 
 		// systemd/upstart/zerg socket activation
