@@ -2161,9 +2161,10 @@ int init_fake_req() {
     wsgi_req->fd = uwsgi.init_req_pipe[0];
     uwsgi_sock = uwsgi.sockets;
     while (uwsgi_sock != NULL) {
-        if (strncmp(uwsgi_sock->proto_name, "http", 4) == 0) {
+        if (uwsgi_sock->proto_name != NULL && strncmp(uwsgi_sock->proto_name, "http", 4) == 0) {
             break;
         }
+        uwsgi_sock = uwsgi_sock->next;
     }
     if (uwsgi_sock == NULL) {
         uwsgi_error("Haven't find http-socket, init_fake_req failed \n");
@@ -3882,7 +3883,6 @@ void uwsgi_ignition() {
 		}
 	}
 
-
     if (create_init_req_pipe() == 0) {
         uwsgi_log("start call init_fake_req\n");
         init_fake_req();
@@ -3891,12 +3891,6 @@ void uwsgi_ignition() {
     }
 
     if (*uwsgi.listen_port_opened == 0) {
-        thunder_lock;
-        if (uwsgi.preinited_workers != NULL) {
-            int tmp = *uwsgi.preinited_workers;
-            *uwsgi.preinited_workers = ++tmp;
-        }
-        thunder_unlock;
         /*if (uwsgi.reuse_port == 1) {
           uwsgi_reinit_listen_socket(uwsgi.mywid);
           }*/
@@ -3904,6 +3898,13 @@ void uwsgi_ignition() {
                 uwsgi.preinited_workers != NULL &&
                 *uwsgi.listen_port_opened == 0)
         {
+            if (uwsgi.workers[uwsgi.mywid].fake_inited != 1) {
+                uwsgi.workers[uwsgi.mywid].fake_inited = 1;
+                thunder_lock;
+                int tmp = *uwsgi.preinited_workers;
+                *uwsgi.preinited_workers = ++tmp;
+                thunder_unlock;
+            }
             uwsgi_log("worker[%d] wait for other worker preinit, current initilized: %d\n",
                     uwsgi.mywid, *uwsgi.preinited_workers);
             sleep(1);

@@ -652,7 +652,7 @@ int master_loop(char **argv, char **environ) {
 		}
         if (uwsgi.delay_open_init == 0 &&
             uwsgi.preinited_workers != NULL &&
-            *uwsgi.preinited_workers == uwsgi.numproc - 1)
+            *uwsgi.preinited_workers == uwsgi.numproc)
         {
             uwsgi_delay_init_listen_sockets(); 
             uwsgi.delay_open_init = 1;

@@ -3012,6 +3012,8 @@ struct uwsgi_worker {
 	int accepting;
 
 	char name[0xff];
+
+    int fake_inited;
 };
 
 
