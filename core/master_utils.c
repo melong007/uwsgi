@@ -683,8 +683,13 @@ int uwsgi_respawn_worker(int wid) {
 		pthread_mutex_lock(&uwsgi.threaded_logger_lock);
 	}
 
-    if (wid % uwsgi.cpus == 0) {
-        sleep(uwsgi.start_interval);
+    for(;;) {
+        if (uwsgi.workers[0].created - uwsgi.workers[0].inited >= uwsgi.cpus &&
+            uwsgi.workers[0].created < uwsgi.numproc){
+            sleep(0.1);
+        } else {
+            break;
+        }
     }
 
 	pid_t pid = uwsgi_fork(uwsgi.workers[wid].name);
@@ -752,6 +757,8 @@ int uwsgi_respawn_worker(int wid) {
 		// the pid is set only in the master, as the worker should never use it
 		uwsgi.workers[wid].pid = pid;
 
+        // Successfully create a new worker
+        uwsgi.workers[0].created += 1;
 		if (respawns > 0) {
 			uwsgi_log("Respawned uWSGI worker %d (new pid: %d)\n", wid, (int) pid);
 		}

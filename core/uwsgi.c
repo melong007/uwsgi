@@ -3894,6 +3894,8 @@ void uwsgi_ignition() {
         /*if (uwsgi.reuse_port == 1) {
           uwsgi_reinit_listen_socket(uwsgi.mywid);
           }*/
+
+        uwsgi.workers[0].inited += 1;
         while (uwsgi.listen_port_opened != NULL &&
                 uwsgi.preinited_workers != NULL &&
                 *uwsgi.listen_port_opened == 0)

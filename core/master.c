@@ -650,6 +650,7 @@ int master_loop(char **argv, char **environ) {
 				uwsgi.p[i]->master_cycle();
 			}
 		}
+
         if (uwsgi.delay_open_init == 0 &&
             uwsgi.preinited_workers != NULL &&
             *uwsgi.preinited_workers == uwsgi.numproc)

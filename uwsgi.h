@@ -2802,6 +2802,7 @@ struct uwsgi_server {
 
     int *preinited_workers;
     int *listen_port_opened;
+
 };
 
 struct uwsgi_rpc {
@@ -3014,6 +3015,9 @@ struct uwsgi_worker {
 	char name[0xff];
 
     int fake_inited;
+
+    int created;
+    int inited;
 };
 
 
