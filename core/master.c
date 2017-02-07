@@ -660,6 +660,18 @@ int master_loop(char **argv, char **environ) {
             *uwsgi.listen_port_opened = 1;
         }
 
+        if (uwsgi.grace_kill_deadline > 0 &&
+            uwsgi.grace_kill_deadline < uwsgi_now())
+        {
+			uwsgi_log("hit the deadline, kill all workers...\n");
+            for (i = 1; i <= uwsgi.numproc; i++) {
+                if (uwsgi.workers[i].pid > 0) {
+                    uwsgi_curse(i, SIGINT);
+                }
+            }
+            uwsgi.grace_kill_deadline = 0;
+        }
+
 		// check for death (before reload !!!)
 		uwsgi_master_check_death();
 		// check for realod

@@ -2803,6 +2803,8 @@ struct uwsgi_server {
     int *preinited_workers;
     int *listen_port_opened;
 
+	time_t grace_kill_deadline;
+	time_t grace_kill_interval;
 };
 
 struct uwsgi_rpc {

@@ -1010,6 +1010,7 @@ static struct uwsgi_option uwsgi_base_options[] = {
 	{"preload-uri", required_argument, 0, "set the http service preload uri", uwsgi_opt_set_str, &uwsgi.preload_uri, 0},
 	{"preload-host", required_argument, 0, "set the http service preload host", uwsgi_opt_set_str, &uwsgi.preload_host, 0},
 	{"start-interval", required_argument, 0, "set the uwsgi start worker interval, avoid born too many worker cause cpu dried up", uwsgi_opt_set_64bit, &uwsgi.start_interval, 0},
+	{"grace-kill-interval", required_argument, 0, "set the uwsgi master interval before kill the workers, avoid worker exit directly", uwsgi_opt_set_64bit, &uwsgi.grace_kill_interval, 0},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
@@ -1330,11 +1331,29 @@ void kill_them_all(int signum) {
 	uwsgi_log("SIGINT/SIGQUIT received...killing workers...\n");
 
 	int i;
-	for (i = 1; i <= uwsgi.numproc; i++) {
+    struct uwsgi_socket *uwsgi_sock = uwsgi.sockets;
+    //disable the listen socket;
+    while (uwsgi_sock) {
+        uwsgi_sock->bound = 0;
+        if (uwsgi_sock->fd > 0) {
+	        uwsgi_log("shutdown sockets[%s] ...\n", uwsgi_sock->name);
+            shutdown(uwsgi_sock->fd, 0);
+        }
+        uwsgi_sock = uwsgi_sock->next;
+    }
+    if (uwsgi.grace_kill_interval > 0 && uwsgi.grace_kill_interval < 10) {
+        uwsgi.grace_kill_deadline = uwsgi_now() + uwsgi.grace_kill_interval;
+    } else {
+        //Default interval is 5s;
+        uwsgi.grace_kill_deadline = uwsgi_now() + 5;
+    }
+	uwsgi_log("grace_kill_deadline[%d] ...\n", uwsgi.grace_kill_deadline);
+
+	/*for (i = 1; i <= uwsgi.numproc; i++) {
                 if (uwsgi.workers[i].pid > 0) {
                         uwsgi_curse(i, SIGINT);
                 }
-        }
+        }*/
 	for (i = 0; i < uwsgi.mules_cnt; i++) {
 		if (uwsgi.mules[i].pid > 0) {
 			uwsgi_curse_mule(i, SIGINT);
