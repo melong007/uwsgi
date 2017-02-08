@@ -3020,6 +3020,8 @@ struct uwsgi_worker {
 
     int created;
     int inited;
+
+    int close_listen_socket;
 };
 
 

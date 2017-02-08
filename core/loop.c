@@ -121,6 +121,7 @@ void *simple_loop_run(void *arg1) {
 	if (uwsgi.threads > 1) {
 		uwsgi_setup_thread_req(core_id, wsgi_req);
 	}
+    uwsgi.workers[uwsgi.mywid].close_listen_socket = 0;
 	// initialize the main event queue to monitor sockets
 	int main_queue = event_queue_init();
 
@@ -138,6 +139,11 @@ void *simple_loop_run(void *arg1) {
         if (deadline > 0 && deadline <= uwsgi_now()) {
             uwsgi_log("worker reach reload dead line, exit now!!\n");
             break;
+        }
+
+        if (uwsgi.workers[uwsgi.mywid].close_listen_socket == 1) {
+	        uwsgi_del_sockets_from_queue(main_queue);
+            uwsgi.workers[uwsgi.mywid].close_listen_socket = 0;
         }
 
 		wsgi_req_setup(wsgi_req, core_id, NULL);

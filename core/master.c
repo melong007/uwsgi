@@ -663,10 +663,14 @@ int master_loop(char **argv, char **environ) {
         if (uwsgi.grace_kill_deadline > 0 &&
             uwsgi.grace_kill_deadline < uwsgi_now())
         {
-			uwsgi_log("hit the deadline, kill all workers...\n");
+			uwsgi_log("hit the deadline, kill SIGHUP all workers...\n");
             for (i = 1; i <= uwsgi.numproc; i++) {
                 if (uwsgi.workers[i].pid > 0) {
-                    uwsgi_curse(i, SIGINT);
+                    uwsgi_curse(i, SIGHUP);
+                }
+
+                if (uwsgi.cpus > 0 && i % (uwsgi.cpus*2) == 0) {
+                    sleep(1);
                 }
             }
             uwsgi.grace_kill_deadline = 0;

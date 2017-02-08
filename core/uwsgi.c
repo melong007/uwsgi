@@ -1333,6 +1333,9 @@ void kill_them_all(int signum) {
 	int i;
     struct uwsgi_socket *uwsgi_sock = uwsgi.sockets;
     //disable the listen socket;
+    for (i = 1; i <= uwsgi.numproc; i++) {
+        uwsgi.workers[i].close_listen_socket = 1;
+    }
     while (uwsgi_sock) {
         uwsgi_sock->bound = 0;
         if (uwsgi_sock->fd > 0) {
@@ -1345,7 +1348,7 @@ void kill_them_all(int signum) {
         uwsgi.grace_kill_deadline = uwsgi_now() + uwsgi.grace_kill_interval;
     } else {
         //Default interval is 5s;
-        uwsgi.grace_kill_deadline = uwsgi_now() + 5;
+        uwsgi.grace_kill_deadline = uwsgi_now() + 2;
     }
 	uwsgi_log("grace_kill_deadline[%d] ...\n", uwsgi.grace_kill_deadline);
 
